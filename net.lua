@@ -1,21 +1,24 @@
 --[[
     ═══════════════════════════════════════════════════════════════════════════════
-    👻 MODO ASTRAL PVP V2 — BACKSTAB LOCK & DYNAMIC FLASH ATTACK [TECLA G]
+    👻 MODO ASTRAL PVP V2.1 STEALTH — GHOST BACKSTAB & INVISIBLE FLASH ATTACK
     ═══════════════════════════════════════════════════════════════════════════════
-    NOVIDADES DA V2 (SISTEMA DE COSTAS & ACOMPANHAMENTO DINÂMICO):
-    • Fixação 100% nas Costas:
-      - A cópia astral se posiciona e se orienta diretamente atrás das costas do
-        jogador alvo (Backstab Position), girando e acompanhando a direção dele.
-    • Flash Attack Dinâmico em Tempo Real (Anti-Fuga):
-      - Ao clicar com o Botão Esquerdo do Mouse, seu corpo real NÃO aparece onde
-        o inimigo estava antes. Ele teleporta diretamente para as costas ATUAIS dele.
-      - Durante os milissegundos do golpe (ex: 60ms), o corpo real fica grudado
-        nas costas frame a frame via RenderStepped. Se o inimigo andar ou correr,
-        você acompanha colado nele sem ficar para trás!
-      - Ao finalizar o ataque, a cópia reaparece nas costas atuais do alvo e seu
-        corpo real retorna instantaneamente ao céu seguro (+850 studs).
-    • Tecla G: Liga / Desliga o Modo Astral Costas.
-    • Tecla H: Salva ponto de espera / retorno seguro.
+    ARQUIVO: 2.lua
+    
+    CORREÇÃO PRINCIPAL (TOTALMENTE INVISÍVEL AO ATACAR):
+    • Zero Aparição / Anti-Flicker:
+      - Quando você clica, seu corpo real NUNCA fica visível.
+      - Seu corpo real permanece 100% invisível (transparência total, sem sombras,
+        sem decalques visíveis) enquanto o Modo Astral estiver ativado.
+      - A cópia astral NÃO é removida da tela durante o clique: ela permanece
+        grudada nas costas do alvo continuamente.
+      - A câmera NÃO treme e NÃO troca de sujeito: continua fixa na cópia astral.
+      - O corpo real desce como um fantasma 100% invisível nas costas atuais do
+        inimigo, disfere o golpe com a arma e sobe imediatamente ao céu, sem
+        que ninguém (nem você, nem os outros) veja o corpo real aparecer.
+    • Fixação 100% nas Costas (Backstab Lock):
+      - Acompanha giros, corridas e curvas do inimigo colado nas costas.
+    • Tecla G: Ligar / Desligar Modo Astral Stealth.
+    • Tecla H: Salvar Base Segura.
     ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -38,7 +41,7 @@ pcall(function()
 end)
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- CONFIGURAÇÕES PRINCIPAIS V2
+-- CONFIGURAÇÕES PRINCIPAIS V2.1 STEALTH
 -- ════════════════════════════════════════════════════════════════════════════════
 local config = {
     modoAstralAtivo    = false,  -- Alternado pela Tecla G ou botão da GUI
@@ -48,6 +51,7 @@ local config = {
     velocidadeVoo      = 160,    -- Velocidade de aproximação até travar nas costas
     distanciaMaxima    = 700,    -- Alcance máximo para detecção de jogadores
     delayFlashMs       = 60,     -- Tempo (ms) em que o corpo real desce e bate colado
+    invisibilidadeReal = true,   -- Garante que o corpo real seja 100% invisível ao descer
     autoAttackAtivo    = false,  -- Se verdadeiro, desfere ataques contínuos automaticamente
     delayAutoAttack    = 0.35,   -- Intervalo entre golpes automáticos
     distanciaGolpe     = 10,     -- Distância máxima para acionar golpe
@@ -78,7 +82,7 @@ local lastManualClickTick   = 0
 -- PLATAFORMA DE FORÇA NO CÉU (POD SEGURO)
 -- ════════════════════════════════════════════════════════════════════════════════
 plataformaCeu = Instance.new("Part")
-plataformaCeu.Name = "AstralSkyPodSafeV2"
+plataformaCeu.Name = "AstralSkyPodSafeV21"
 plataformaCeu.Size = Vector3.new(20, 1, 20)
 plataformaCeu.Transparency = 0.65
 plataformaCeu.Color = COR_ACCENT
@@ -102,16 +106,79 @@ local function avisar(titulo, msg, dur)
 end
 
 -- ════════════════════════════════════════════════════════════════════════════════
+-- SISTEMA DE INVISIBILIDADE TOTAL (CORPO FANTASMA 100% INVISÍVEL)
+-- Garante que o corpo real nunca seja visto ao descer do céu para golpear!
+-- ════════════════════════════════════════════════════════════════════════════════
+local function aplicarInvisibilidade(char, invisivel)
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if invisivel then
+                if part:GetAttribute("OrigTransp") == nil then
+                    part:SetAttribute("OrigTransp", part.Transparency)
+                    part:SetAttribute("OrigCastShadow", part.CastShadow)
+                end
+                part.Transparency = 1
+                part.CastShadow = false
+            else
+                local origT = part:GetAttribute("OrigTransp")
+                if origT ~= nil then
+                    part.Transparency = origT
+                    part:SetAttribute("OrigTransp", nil)
+                else
+                    part.Transparency = 0
+                end
+                local origCS = part:GetAttribute("OrigCastShadow")
+                if origCS ~= nil then
+                    part.CastShadow = origCS
+                    part:SetAttribute("OrigCastShadow", nil)
+                else
+                    part.CastShadow = true
+                end
+            end
+        elseif part:IsA("Decal") then
+            if invisivel then
+                if part:GetAttribute("OrigTransp") == nil then
+                    part:SetAttribute("OrigTransp", part.Transparency)
+                end
+                part.Transparency = 1
+            else
+                local origT = part:GetAttribute("OrigTransp")
+                if origT ~= nil then
+                    part.Transparency = origT
+                    part:SetAttribute("OrigTransp", nil)
+                else
+                    part.Transparency = 0
+                end
+            end
+        elseif part:IsA("ParticleEmitter") or part:IsA("Trail") or part:IsA("Beam") or part:IsA("Highlight") then
+            if invisivel then
+                if part:GetAttribute("OrigEnabled") == nil then
+                    part:SetAttribute("OrigEnabled", part.Enabled)
+                end
+                part.Enabled = false
+            else
+                local origEn = part:GetAttribute("OrigEnabled")
+                if origEn ~= nil then
+                    part.Enabled = origEn
+                    part:SetAttribute("OrigEnabled", nil)
+                else
+                    part.Enabled = true
+                end
+            end
+        end
+    end
+end
+
+-- ════════════════════════════════════════════════════════════════════════════════
 -- CÁLCULO DA POSIÇÃO DINÂMICA DAS COSTAS (BACKSTAB CFrame)
 -- ════════════════════════════════════════════════════════════════════════════════
 local function obterCFrameCostas(tRoot)
     if not tRoot or not tRoot.Parent then return nil end
     local targetCF = tRoot.CFrame
-    -- Vetor das costas: recua no LookVector e ajusta altura
     local dist = config.distanciaCostas or 2.2
     local alt  = config.alturaCostas or 0.2
     local posCostas = targetCF.Position - (targetCF.LookVector * dist) + Vector3.new(0, alt, 0)
-    -- Orientação olhando diretamente para as costas do inimigo
     return CFrame.lookAt(posCostas, targetCF.Position + Vector3.new(0, alt, 0))
 end
 
@@ -333,7 +400,7 @@ local function ensureWeaponEquipped()
 end
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- SISTEMA DA TECLA G (MODO ASTRAL V2 COMPLETO)
+-- SISTEMA DA TECLA G (MODO ASTRAL V2.1 STEALTH)
 -- ════════════════════════════════════════════════════════════════════════════════
 local atualizarBotoesGUI -- Forward declaration
 
@@ -346,13 +413,13 @@ local function alternarModoAstral()
     if not realRoot or not realHum then return end
 
     if config.modoAstralAtivo then
-        -- 1. ATIVAR MODO ASTRAL
+        -- 1. ATIVAR MODO ASTRAL STEALTH
         local cframeAtual = realRoot.CFrame
         plataformaCeu.CFrame = CFrame.new(cframeAtual.X, config.alturaCeu, cframeAtual.Z)
 
         charReal.Archivable = true
         copiaPersonagem = charReal:Clone()
-        copiaPersonagem.Name = LocalPlayer.Name .. "_AstralCloneV2"
+        copiaPersonagem.Name = LocalPlayer.Name .. "_AstralCloneV21"
 
         for _, s in ipairs(copiaPersonagem:GetDescendants()) do
             if s:IsA("Script") or s:IsA("LocalScript") then s:Destroy() end
@@ -372,16 +439,21 @@ local function alternarModoAstral()
             camera.CameraSubject = cHum
         end
 
-        -- Fixa o corpo real com segurança no céu
+        -- TORNA O CORPO REAL 100% INVISÍVEL
+        if config.invisibilidadeReal then
+            aplicarInvisibilidade(charReal, true)
+        end
+
+        -- Envia o corpo real seguro para o céu
         realHum.PlatformStand = true
         realRoot.AssemblyLinearVelocity = Vector3.zero
         realRoot.AssemblyAngularVelocity = Vector3.zero
         realRoot.CFrame = CFrame.new(cframeAtual.X, config.alturaCeu + 3.5, cframeAtual.Z)
 
         if atualizarBotoesGUI then atualizarBotoesGUI() end
-        avisar("👻 Modo Astral V2: ATIVADO", "Corpo seguro a +" .. config.alturaCeu .. " studs! Travando nas costas do alvo...")
+        avisar("👻 Astral Stealth V2.1: ON", "Corpo 100% invisível no céu (+850 studs)! Colando nas costas...")
     else
-        -- 2. DESATIVAR MODO ASTRAL
+        -- 2. DESATIVAR MODO ASTRAL (RESTAURA VISIBILIDADE)
         clearCurrentTarget()
 
         if copiaPersonagem and copiaPersonagem.Parent then
@@ -395,6 +467,9 @@ local function alternarModoAstral()
             copiaPersonagem = nil
         end
 
+        -- Restaura a visibilidade padrão do corpo real
+        aplicarInvisibilidade(charReal, false)
+
         realHum.PlatformStand = false
         camera.CameraSubject = realHum
         plataformaCeu.CFrame = CFrame.new(0, -9999, 0)
@@ -405,14 +480,12 @@ local function alternarModoAstral()
         table.clear(animTracks)
 
         if atualizarBotoesGUI then atualizarBotoesGUI() end
-        avisar("👻 Modo Astral V2: DESATIVADO", "Retornado ao corpo físico com segurança.")
+        avisar("👻 Astral Stealth V2.1: OFF", "Retornado ao corpo com visibilidade restaurada.")
     end
 end
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- FLASH ATTACK V2 (DINÂMICO, ANTI-FUGA & COLADO NAS COSTAS)
--- O corpo real desce diretamente nas costas ATUAIS e acompanha o movimento
--- do inimigo a cada frame durante os milissegundos do ataque!
+-- FLASH ATTACK V2.1 STEALTH (TOTALMENTE INVISÍVEL — ZERO POP-IN / ZERO APARIÇÃO)
 -- ════════════════════════════════════════════════════════════════════════════════
 local function executarFlashAtaque()
     if not config.modoAstralAtivo then return end
@@ -425,7 +498,6 @@ local function executarFlashAtaque()
     local realHum  = charReal:FindFirstChildOfClass("Humanoid")
     if not realRoot or not realHum then return end
 
-    -- Obtém o tronco do inimigo para posicionamento dinâmico
     local eRoot = targetRootPart
     if not eRoot or not eRoot.Parent then
         if currentTarget then
@@ -436,10 +508,14 @@ local function executarFlashAtaque()
 
     executandoFlashAtaque = true
 
-    -- 1. Oculta temporariamente a cópia astral
-    copiaPersonagem.Parent = nil
+    -- IMPORTANTE: A CÓPIA ASTRAL NÃO É REMOVIDA!
+    -- Ela continua visível e perfeitamente posicionada para a câmera não tremer
+    -- e para que você não desapareça da visão em terceira pessoa!
 
-    -- 2. Posiciona o corpo real nas costas ATUAIS do inimigo
+    -- GARANTE QUE O CORPO REAL ESTÁ 100% INVISÍVEL
+    aplicarInvisibilidade(charReal, true)
+
+    -- Posiciona o corpo real diretamente nas costas atuais
     local costasIniciais = obterCFrameCostas(eRoot)
     if costasIniciais then
         realRoot.CFrame = costasIniciais
@@ -447,12 +523,18 @@ local function executarFlashAtaque()
     realHum.PlatformStand = false
     realRoot.AssemblyLinearVelocity = Vector3.zero
     realRoot.AssemblyAngularVelocity = Vector3.zero
-    camera.CameraSubject = realHum
 
-    -- Equipa a ferramenta
+    -- A câmera CONTINUA FOCADA NA CÓPIA ASTRAL (cHum)!
+    -- Nenhuma troca brusca de câmera para evitar flickering visual
+    local cHum = copiaPersonagem:FindFirstChildOfClass("Humanoid")
+    if cHum then
+        camera.CameraSubject = cHum
+    end
+
+    -- Equipa arma
     ensureWeaponEquipped()
 
-    -- 3. Dispara ativação da arma e clique virtual do mouse
+    -- Dispara ativação da arma e clique virtual do mouse
     local tool = charReal:FindFirstChildOfClass("Tool")
     if tool then
         pcall(function() tool:Activate() end)
@@ -469,9 +551,7 @@ local function executarFlashAtaque()
         end
     end)
 
-    -- 4. LOOP DINÂMICO DE ACOMPANHAMENTO NAS COSTAS (ANTI-FUGA)
-    -- Durante os milissegundos do golpe, mesmo se o inimigo correr ou andar,
-    -- o corpo real é colado frame a frame atrás das costas dele!
+    -- LOOP DINÂMICO DE ACOMPANHAMENTO INVISÍVEL NAS COSTAS
     local duracaoSegundos = math.clamp(config.delayFlashMs / 1000, 0.02, 0.5)
     local tempoInicio = tick()
 
@@ -479,50 +559,42 @@ local function executarFlashAtaque()
         if eRoot and eRoot.Parent then
             local liveCostas = obterCFrameCostas(eRoot)
             if liveCostas then
+                -- Move o corpo real invisível colado nas costas
                 realRoot.CFrame = liveCostas
                 realRoot.AssemblyLinearVelocity = Vector3.zero
                 realRoot.AssemblyAngularVelocity = Vector3.zero
+
+                -- Também mantém a cópia visível colada nas costas
+                if copiaPersonagem and copiaPersonagem.Parent then
+                    copiaPersonagem:PivotTo(liveCostas)
+                end
             end
         end
         RunService.RenderStepped:Wait()
     end
 
-    -- 5. RETORNA IMEDIATAMENTE PARA O MODO ASTRAL NO CÉU
+    -- RETORNA O CORPO REAL AO CÉU NA PLATAFORMA
     if config.modoAstralAtivo and charReal and charReal.Parent and realRoot and realHum then
-        -- Restaura a cópia exatamente colada na posição ATUAL das costas do inimigo
-        copiaPersonagem.Parent = Workspace
-        if eRoot and eRoot.Parent then
-            local costasFinais = obterCFrameCostas(eRoot)
-            if costasFinais then
-                copiaPersonagem:PivotTo(costasFinais)
-            end
-        end
-
-        local cHum = copiaPersonagem:FindFirstChildOfClass("Humanoid")
-        if cHum then
-            camera.CameraSubject = cHum
-        end
-
-        -- Teleporta o corpo real de volta ao céu seguro
         realHum.PlatformStand = true
         realRoot.AssemblyLinearVelocity = Vector3.zero
         realRoot.AssemblyAngularVelocity = Vector3.zero
         local skyCenter = plataformaCeu.Position
         realRoot.CFrame = CFrame.new(skyCenter.X, skyCenter.Y + 3.5, skyCenter.Z)
-    else
-        if copiaPersonagem and copiaPersonagem.Parent then
-            copiaPersonagem:Destroy()
-            copiaPersonagem = nil
+
+        -- Garante a cópia nas costas
+        if eRoot and eRoot.Parent and copiaPersonagem and copiaPersonagem.Parent then
+            local costasFinais = obterCFrameCostas(eRoot)
+            if costasFinais then
+                copiaPersonagem:PivotTo(costasFinais)
+            end
         end
-        realHum.PlatformStand = false
-        camera.CameraSubject = realHum
     end
 
     executandoFlashAtaque = false
 end
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- INTERFACE GRÁFICA HUD V2 (TOPO / ARRASTÁVEL)
+-- INTERFACE GRÁFICA HUD V2.1 (TOPO / ARRASTÁVEL)
 -- ════════════════════════════════════════════════════════════════════════════════
 local function getGuiParent()
     local success, coreGui = pcall(function() return game:GetService("CoreGui") end)
@@ -537,17 +609,17 @@ local function getGuiParent()
 end
 
 local guiParent = getGuiParent()
-if guiParent:FindFirstChild("AstralPvpGuiV2") then
-    guiParent["AstralPvpGuiV2"]:Destroy()
+if guiParent:FindFirstChild("AstralPvpGuiV21") then
+    guiParent["AstralPvpGuiV21"]:Destroy()
 end
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AstralPvpGuiV2"
+screenGui.Name = "AstralPvpGuiV21"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = guiParent
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainPvpFrameV2"
+mainFrame.Name = "MainPvpFrameV21"
 mainFrame.Size = UDim2.new(0, 260, 0, 340)
 mainFrame.Position = UDim2.new(0.5, -130, 0, 25)
 mainFrame.BackgroundColor3 = COR_FUNDO
@@ -580,7 +652,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -40, 1, 0)
 title.Position = UDim2.new(0, 10, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "👻 Astral V2 — Backstab Lock [G]"
+title.Text = "👻 Astral V2.1 — Stealth Ghost [G]"
 title.TextColor3 = COR_ACCENT
 title.Font = Enum.Font.GothamBold
 title.TextSize = 11
@@ -790,7 +862,7 @@ local footer = Instance.new("TextLabel")
 footer.Size = UDim2.new(1, -20, 0, 50)
 footer.Position = UDim2.new(0, 10, 0, 276)
 footer.BackgroundTransparency = 1
-footer.Text = "🗡️ V2: Fixado 100% nas Costas (Anti-Fuga)\n🖱️ Clique Esquerdo: Flash Attack dinâmico\n[G] Modo Astral Costas  •  [H] Ponto Base"
+footer.Text = "👻 V2.1: Stealth 100% Invisível (Zero Aparição)\n🖱️ Clique Esquerdo: Golpe Fantasma sem piscar\n[G] Modo Astral Costas  •  [H] Ponto Base"
 footer.TextColor3 = Color3.fromRGB(160, 175, 200)
 footer.Font = Enum.Font.Gotham
 footer.TextSize = 9
@@ -850,7 +922,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         return
     end
 
-    -- Clique do Mouse Esquerdo: Flash Attack
+    -- Clique do Mouse Esquerdo: Flash Attack Stealth
     if not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton1 then
         if config.modoAstralAtivo then
             if tick() - lastManualClickTick >= 0.05 then
@@ -909,7 +981,7 @@ task.spawn(function()
                 local cRoot = copiaPersonagem and copiaPersonagem:FindFirstChild("HumanoidRootPart")
                 local dist = cRoot and math.floor((cRoot.Position - targetRootPart.Position).Magnitude) or 0
 
-                statusLabel.Text = string.format("Alvo: %s (%d studs)\nVida: %d/%d HP ● TRAVADO NAS COSTAS", currentTarget.Name, dist, hp, maxHp)
+                statusLabel.Text = string.format("Alvo: %s (%d studs)\nVida: %d/%d HP ● STEALTH GHOST", currentTarget.Name, dist, hp, maxHp)
                 statusLabel.TextColor3 = Color3.fromRGB(80, 255, 140)
             else
                 if safeSpotCFrame then
@@ -924,18 +996,29 @@ task.spawn(function()
 end)
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- LOOPS PRINCIPAIS (STEPPED: NOCLIP & HEARTBEAT: TRAVAÇÃO 100% NAS COSTAS)
+-- LOOPS PRINCIPAIS (STEPPED: NOCLIP & INVISIBILIDADE CONTÍNUA)
 -- ════════════════════════════════════════════════════════════════════════════════
 
--- NOCLIP ATIVO NO MODO ASTRAL (Evita colisões indesejadas com o alvo)
 RunService.Stepped:Connect(function()
     if not config.modoAstralAtivo then return end
 
     local char = LocalPlayer.Character
     if char then
+        -- Noclip
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") and part.CanCollide then
                 part.CanCollide = false
+            end
+        end
+        -- Garante que o corpo real permaneça 100% invisível em todo frame
+        if config.invisibilidadeReal then
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") and p.Transparency < 1 then
+                    p.Transparency = 1
+                    p.CastShadow = false
+                elseif p:IsA("Decal") and p.Transparency < 1 then
+                    p.Transparency = 1
+                end
             end
         end
     end
@@ -953,7 +1036,6 @@ end)
 RunService.Heartbeat:Connect(function(dt)
     if not config.modoAstralAtivo then return end
 
-    -- Durante o flash attack dinâmico, o RenderStepped controla o corpo real
     if executandoFlashAtaque then return end
 
     local charReal = LocalPlayer.Character
@@ -980,7 +1062,6 @@ RunService.Heartbeat:Connect(function(dt)
             local dist = (targetPos - currentPos).Magnitude
 
             if dist > 35 then
-                -- Aproximação em alta velocidade
                 local direction = (targetPos - currentPos).Unit
                 local step = math.min(dist, config.velocidadeVoo * dt)
                 cRoot.CFrame = CFrame.lookAt(currentPos + direction * step, targetRootPart.Position)
@@ -988,14 +1069,13 @@ RunService.Heartbeat:Connect(function(dt)
                 if animTracks.run and not animTracks.run.IsPlaying then animTracks.run:Play(0.1) end
                 if animTracks.idle and animTracks.idle.IsPlaying then animTracks.idle:Stop(0.1) end
             else
-                -- Trava instantânea e perfeita nas costas (acompanha rotações e curvas)
                 cRoot.CFrame = costasCF
 
                 if animTracks.idle and not animTracks.idle.IsPlaying then animTracks.idle:Play(0.1) end
                 if animTracks.run and animTracks.run.IsPlaying then animTracks.run:Stop(0.1) end
             end
 
-            -- Se o Auto-Attack estiver ativado e estiver a alcance de golpe
+            -- Auto-Attack contínuo se ativado
             if config.autoAttackAtivo and dist <= config.distanciaGolpe then
                 if tick() - lastAutoAttackTick >= (config.delayAutoAttack or 0.35) then
                     lastAutoAttackTick = tick()
@@ -1035,7 +1115,7 @@ end)
 -- ════════════════════════════════════════════════════════════════════════════════
 -- LIMPEZA E RESET AO RENASCER / MORRER
 -- ════════════════════════════════════════════════════════════════════════════════
-LocalPlayer.CharacterAdded:Connect(function()
+LocalPlayer.CharacterAdded:Connect(function(newChar)
     if config.modoAstralAtivo then
         config.modoAstralAtivo = false
         if copiaPersonagem and copiaPersonagem.Parent then
@@ -1052,5 +1132,5 @@ LocalPlayer.CharacterAdded:Connect(function()
     clearCurrentTarget()
 end)
 
-avisar("👻 Astral V2 Pronto!", "[G] = Travar nas Costas  |  Clique Esquerdo = Flash Attack", 4)
-print("[ASTRAL PVP V2] 1.lua atualizado com sucesso!")
+avisar("👻 Astral V2.1 Pronto!", "Modo Stealth Ghost carregado em 2.lua!", 4)
+print("[ASTRAL PVP V2.1 STEALTH] Arquivo 2.lua criado com sucesso!")
