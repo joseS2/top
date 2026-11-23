@@ -3,7 +3,7 @@
     👻 MODO ASTRAL PVP V3.0 — ZERO VISIBILITY GHOST & UNDERGROUND STRIKE
     ═══════════════════════════════════════════════════════════════════════════════
     ARQUIVO: 3.lua
-    
+     
     SOLUÇÃO DEFINITIVA PARA NÃO FICAR VISÍVEL PARA NINGUÉM:
     • O Modo G NUNCA É DESATIVADO:
       - O Modo Astral permanece ligado 100% do tempo.
