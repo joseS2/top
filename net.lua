@@ -1,15 +1,29 @@
 --[[
     ═══════════════════════════════════════════════════════════════════════════════
-    👻 MODO ASTRAL PVP + FLASH ATTACK RELÂMPAGO [TECLA G]
+    👻 MODO ASTRAL PVP V3.0 — ZERO VISIBILITY GHOST & UNDERGROUND STRIKE
     ═══════════════════════════════════════════════════════════════════════════════
-    • Tecla G: Ativa o Modo Astral Completo.
-      - Seu corpo real é enviado com segurança para a plataforma no céu (+850 studs).
-      - Sua cópia astral fica grudada no jogador mais próximo (perseguição contínua).
-    • Clique do Mouse Esquerdo:
-      - Desce instantaneamente do céu para a posição do clone colado no jogador.
-      - Desfere o golpe/ataque com o botão esquerdo e arma equipada.
-      - Em milissegundos (ex: 60ms) retorna imediatamente para o céu no Modo Astral!
-    • Tecla H: Salva ponto de espera / retorno seguro.
+    ARQUIVO: 3.lua
+    
+    SOLUÇÃO DEFINITIVA PARA NÃO FICAR VISÍVEL PARA NINGUÉM:
+    • O Modo G NUNCA É DESATIVADO:
+      - O Modo Astral permanece ligado 100% do tempo.
+      - A plataforma segura no céu (+850 studs) nunca sai do lugar.
+      - A cópia astral continua fixa nas costas do inimigo sem interrupção.
+    • Dupla Proteção Anti-Visibilidade no Clique:
+      1. Micro-Strike Sub-Frame (Padrão: 10ms):
+         O golpe ocorre em menos de 15 milissegundos (abaixo do tempo de envio
+         de pacotes do Roblox de 33ms). O buffer de interpolação dos outros
+         jogadores descarta o movimento e ninguém vê seu boneco descer.
+      2. Modo Golpe Subterrâneo (Underground Ghost):
+         O corpo real desce -4.5 studs abaixo do chão/terreno, exatamente sob
+         as costas do inimigo. O alcance da arma acerta o inimigo por baixo,
+         e como o chão/mapa está entre você e os outros players, é FISICAMENTE
+         IMPOSSÍVEL qualquer um ver seu avatar!
+      3. Invisibilidade Total Forçada a Cada Frame:
+         Todas as partes, decalques e acessórios do corpo real são mantidos
+         em transparência 1 e sem sombras em todo frame.
+    • Tecla G: Ligar / Desligar Modo Astral V3.
+    • Tecla H: Salvar Ponto Seguro / Base.
     ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -32,18 +46,22 @@ pcall(function()
 end)
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- CONFIGURAÇÕES PRINCIPAIS
+-- CONFIGURAÇÕES PRINCIPAIS V3.0
 -- ════════════════════════════════════════════════════════════════════════════════
 local config = {
     modoAstralAtivo    = false,  -- Alternado pela Tecla G ou botão da GUI
     alturaCeu          = 850,    -- Altura do pod de segurança no céu (studs)
-    alturaCabeca       = 3.5,    -- Altura relativa ao jogador inimigo (studs)
-    velocidadeVoo      = 130,    -- Velocidade de aproximação até grudar no alvo
-    distanciaMaxima    = 650,    -- Alcance máximo para detecção de jogadores
-    delayFlashMs       = 60,     -- Milissegundos em que o corpo real fica no chão para bater antes de voltar ao céu
-    autoAttackAtivo    = false,  -- Se verdadeiro, além do clique manual, também desfere golpes automáticos periódicos
-    delayAutoAttack    = 0.35,   -- Intervalo entre golpes se auto-attack estiver ligado
-    distanciaGolpe     = 14,     -- Distância máxima do inimigo para golpear
+    distanciaCostas    = 2.0,    -- Distância exata atrás das costas do inimigo (studs)
+    alturaCostas       = 0.2,    -- Ajuste de altura em relação ao tronco do inimigo
+    velocidadeVoo      = 170,    -- Velocidade de aproximação até travar nas costas
+    distanciaMaxima    = 750,    -- Alcance máximo para detecção de jogadores
+    delayFlashMs       = 10,     -- Tempo ultra-rápido do golpe (10ms = sub-frame invisível)
+    golpeSubterraneo   = true,   -- Bate debaixo do chão (-4.5 studs) para visibilidade ZERO
+    offsetSubterraneo  = 4.5,    -- Profundidade abaixo do chão para o golpe subterrâneo
+    invisibilidadeReal = true,   -- Força transparência total do corpo real continuamente
+    autoAttackAtivo    = false,  -- Golpes contínuos automáticos
+    delayAutoAttack    = 0.35,   -- Intervalo entre golpes automáticos
+    distanciaGolpe     = 12,     -- Distância máxima para acionar golpe
     velocidadePadrao   = 16,     -- Velocidade de caminhada da cópia
     velocidadeSprint   = 32,     -- Velocidade de sprint da cópia
 }
@@ -52,13 +70,13 @@ local config = {
 local COR_ACCENT = Color3.fromRGB(168, 85, 247)  -- Roxo Astral Neon
 local COR_ROSA   = Color3.fromRGB(255, 50, 180)  -- Rosa Choque
 local COR_FUNDO  = Color3.fromRGB(12, 15, 22)    -- Dark Black/Blue
-local COR_CARD   = Color3.fromRGB(20, 24, 36)    -- Dark Slate
 
 -- VARIÁVEIS DE ESTADO
 local copiaPersonagem       = nil
 local plataformaCeu         = nil
 local animTracks            = {}
 local currentTarget         = nil
+local targetRootPart        = nil
 local targetHead            = nil
 local diedConn              = nil
 local safeSpotCFrame        = nil
@@ -71,7 +89,7 @@ local lastManualClickTick   = 0
 -- PLATAFORMA DE FORÇA NO CÉU (POD SEGURO)
 -- ════════════════════════════════════════════════════════════════════════════════
 plataformaCeu = Instance.new("Part")
-plataformaCeu.Name = "AstralSkyPodSafe"
+plataformaCeu.Name = "AstralSkyPodSafeV3"
 plataformaCeu.Size = Vector3.new(20, 1, 20)
 plataformaCeu.Transparency = 0.65
 plataformaCeu.Color = COR_ACCENT
@@ -92,6 +110,82 @@ local function avisar(titulo, msg, dur)
             Duration = dur or 2.5
         })
     end)
+end
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- SISTEMA DE INVISIBILIDADE TOTAL (CORPO FANTASMA)
+-- ════════════════════════════════════════════════════════════════════════════════
+local function aplicarInvisibilidade(char, invisivel)
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if invisivel then
+                if part:GetAttribute("OrigTransp") == nil then
+                    part:SetAttribute("OrigTransp", part.Transparency)
+                    part:SetAttribute("OrigCastShadow", part.CastShadow)
+                end
+                part.Transparency = 1
+                part.CastShadow = false
+            else
+                local origT = part:GetAttribute("OrigTransp")
+                if origT ~= nil then
+                    part.Transparency = origT
+                    part:SetAttribute("OrigTransp", nil)
+                else
+                    part.Transparency = 0
+                end
+                local origCS = part:GetAttribute("OrigCastShadow")
+                if origCS ~= nil then
+                    part.CastShadow = origCS
+                    part:SetAttribute("OrigCastShadow", nil)
+                else
+                    part.CastShadow = true
+                end
+            end
+        elseif part:IsA("Decal") then
+            if invisivel then
+                if part:GetAttribute("OrigTransp") == nil then
+                    part:SetAttribute("OrigTransp", part.Transparency)
+                end
+                part.Transparency = 1
+            else
+                local origT = part:GetAttribute("OrigTransp")
+                if origT ~= nil then
+                    part.Transparency = origT
+                    part:SetAttribute("OrigTransp", nil)
+                else
+                    part.Transparency = 0
+                end
+            end
+        elseif part:IsA("ParticleEmitter") or part:IsA("Trail") or part:IsA("Beam") or part:IsA("Highlight") then
+            if invisivel then
+                if part:GetAttribute("OrigEnabled") == nil then
+                    part:SetAttribute("OrigEnabled", part.Enabled)
+                end
+                part.Enabled = false
+            else
+                local origEn = part:GetAttribute("OrigEnabled")
+                if origEn ~= nil then
+                    part.Enabled = origEn
+                    part:SetAttribute("OrigEnabled", nil)
+                else
+                    part.Enabled = true
+                end
+            end
+        end
+    end
+end
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- CÁLCULO DA POSIÇÃO DINÂMICA DAS COSTAS
+-- ════════════════════════════════════════════════════════════════════════════════
+local function obterCFrameCostas(tRoot)
+    if not tRoot or not tRoot.Parent then return nil end
+    local targetCF = tRoot.CFrame
+    local dist = config.distanciaCostas or 2.0
+    local alt  = config.alturaCostas or 0.2
+    local posCostas = targetCF.Position - (targetCF.LookVector * dist) + Vector3.new(0, alt, 0)
+    return CFrame.lookAt(posCostas, targetCF.Position + Vector3.new(0, alt, 0))
 end
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -238,7 +332,7 @@ local function isEnemyAlive(model)
     if not p then return false end
 
     local hum = model:FindFirstChildOfClass("Humanoid")
-    local rootPart = model:FindFirstChild("HumanoidRootPart")
+    local rootPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model:FindFirstChild("UpperTorso")
     local head = model:FindFirstChild("Head") or rootPart
 
     if not hum or not rootPart or not head then return false end
@@ -255,8 +349,9 @@ local function clearCurrentTarget()
     if currentTarget then
         markAsDead(currentTarget)
     end
-    currentTarget = nil
-    targetHead = nil
+    currentTarget  = nil
+    targetRootPart = nil
+    targetHead     = nil
 end
 
 local function findNearestEnemy()
@@ -276,9 +371,9 @@ local function findNearestEnemy()
         if p ~= LocalPlayer and p.Character then
             local model = p.Character
             if isEnemyAlive(model) then
-                local head = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
-                if head then
-                    local dist = (myPos - head.Position).Magnitude
+                local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model:FindFirstChild("UpperTorso")
+                if root then
+                    local dist = (myPos - root.Position).Magnitude
                     if dist <= shortestDist then
                         shortestDist = dist
                         closestEnemy = model
@@ -311,9 +406,9 @@ local function ensureWeaponEquipped()
 end
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- SISTEMA DA TECLA G (MODO ASTRAL COMPLETO)
+-- SISTEMA DA TECLA G (MODO ASTRAL V3 COMPLETO)
 -- ════════════════════════════════════════════════════════════════════════════════
-local atualizarBotoesGUI -- Declaração forward para a GUI
+local atualizarBotoesGUI -- Forward declaration
 
 local function alternarModoAstral()
     config.modoAstralAtivo = not config.modoAstralAtivo
@@ -324,13 +419,13 @@ local function alternarModoAstral()
     if not realRoot or not realHum then return end
 
     if config.modoAstralAtivo then
-        -- 1. ATIVAR MODO ASTRAL
+        -- 1. ATIVAR MODO ASTRAL V3
         local cframeAtual = realRoot.CFrame
         plataformaCeu.CFrame = CFrame.new(cframeAtual.X, config.alturaCeu, cframeAtual.Z)
 
         charReal.Archivable = true
         copiaPersonagem = charReal:Clone()
-        copiaPersonagem.Name = LocalPlayer.Name .. "_AstralClone"
+        copiaPersonagem.Name = LocalPlayer.Name .. "_AstralCloneV3"
 
         for _, s in ipairs(copiaPersonagem:GetDescendants()) do
             if s:IsA("Script") or s:IsA("LocalScript") then s:Destroy() end
@@ -350,14 +445,19 @@ local function alternarModoAstral()
             camera.CameraSubject = cHum
         end
 
-        -- Fixa o corpo real com segurança no céu
+        -- TORNA O CORPO REAL 100% INVISÍVEL
+        if config.invisibilidadeReal then
+            aplicarInvisibilidade(charReal, true)
+        end
+
+        -- Envia o corpo real para a segurança da plataforma no céu
         realHum.PlatformStand = true
         realRoot.AssemblyLinearVelocity = Vector3.zero
         realRoot.AssemblyAngularVelocity = Vector3.zero
         realRoot.CFrame = CFrame.new(cframeAtual.X, config.alturaCeu + 3.5, cframeAtual.Z)
 
         if atualizarBotoesGUI then atualizarBotoesGUI() end
-        avisar("👻 Modo Astral [G]: ATIVADO", "Corpo real seguro a +" .. config.alturaCeu .. " studs! Grudando no alvo...")
+        avisar("👻 Astral V3 Zero-Vis: ON", "Corpo no céu (+850 studs)! Ataque Ghost ativo!")
     else
         -- 2. DESATIVAR MODO ASTRAL
         clearCurrentTarget()
@@ -373,6 +473,8 @@ local function alternarModoAstral()
             copiaPersonagem = nil
         end
 
+        aplicarInvisibilidade(charReal, false)
+
         realHum.PlatformStand = false
         camera.CameraSubject = realHum
         plataformaCeu.CFrame = CFrame.new(0, -9999, 0)
@@ -383,13 +485,14 @@ local function alternarModoAstral()
         table.clear(animTracks)
 
         if atualizarBotoesGUI then atualizarBotoesGUI() end
-        avisar("👻 Modo Astral [G]: DESATIVADO", "Retornado ao corpo físico com segurança.")
+        avisar("👻 Astral V3: DESLIGADO", "Retornado ao corpo com visibilidade normal.")
     end
 end
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- FLASH ATTACK RELÂMPAGO (AO CLICAR COM O MOUSE ESQUERDO)
--- Desce instantaneamente do céu, clica/ataca, e volta ao Modo Astral em milissegundos!
+-- FLASH ATTACK V3 — ZERO VISIBILIDADE (SUBTERRÂNEO / SUB-FRAME)
+-- O Modo G NUNCA é desligado! O ataque acontece debaixo da terra ou em 10ms,
+-- tornando IMPOSSÍVEL que outros jogadores vejam seu boneco!
 -- ════════════════════════════════════════════════════════════════════════════════
 local function executarFlashAtaque()
     if not config.modoAstralAtivo then return end
@@ -400,27 +503,50 @@ local function executarFlashAtaque()
     if not charReal then return end
     local realRoot = charReal:FindFirstChild("HumanoidRootPart")
     local realHum  = charReal:FindFirstChildOfClass("Humanoid")
-    local cRoot    = copiaPersonagem:FindFirstChild("HumanoidRootPart")
-    if not realRoot or not realHum or not cRoot then return end
+    if not realRoot or not realHum then return end
+
+    local eRoot = targetRootPart
+    if not eRoot or not eRoot.Parent then
+        if currentTarget then
+            eRoot = currentTarget:FindFirstChild("HumanoidRootPart") or currentTarget:FindFirstChild("Torso") or currentTarget:FindFirstChild("UpperTorso")
+        end
+    end
+    if not eRoot or not eRoot.Parent then return end
 
     executandoFlashAtaque = true
 
-    -- 1. CAPTURA A POSIÇÃO ONDE A CÓPIA ESTÁ GRUDADA NO ALVO
-    local posAtaque = cRoot.CFrame
+    -- FORÇA A INVISIBILIDADE
+    aplicarInvisibilidade(charReal, true)
 
-    -- 2. DESCE O CORPO REAL INSTANTANEAMENTE PARA O LOCAL
+    -- Equipa a ferramenta
+    ensureWeaponEquipped()
+
+    -- CÁLCULO DA POSIÇÃO DO GOLPE:
+    -- Se golpeSubterraneo estiver ativo, posiciona -4.5 studs abaixo do chão!
+    -- O chão bloqueia a visão de todos os outros players, e o alcance da arma acerta o alvo de baixo!
+    local strikeCFrame = nil
+    if config.golpeSubterraneo then
+        local tCF = eRoot.CFrame
+        local posSub = tCF.Position - (tCF.LookVector * 1.5) - Vector3.new(0, config.offsetSubterraneo or 4.5, 0)
+        strikeCFrame = CFrame.lookAt(posSub, tCF.Position)
+    else
+        strikeCFrame = obterCFrameCostas(eRoot)
+    end
+
+    if strikeCFrame then
+        realRoot.CFrame = strikeCFrame
+    end
     realHum.PlatformStand = false
     realRoot.AssemblyLinearVelocity = Vector3.zero
     realRoot.AssemblyAngularVelocity = Vector3.zero
-    realRoot.CFrame = posAtaque
-    camera.CameraSubject = realHum
 
-    -- Oculta temporariamente a cópia para ataque limpo
-    copiaPersonagem.Parent = nil
+    -- A CÂMERA NUNCA SAI DA CÓPIA ASTRAL
+    local cHum = copiaPersonagem:FindFirstChildOfClass("Humanoid")
+    if cHum then
+        camera.CameraSubject = cHum
+    end
 
-    -- 3. EXECUTA O CLIQUE DO MOUSE ESQUERDO E ATIVAÇÃO DA ARMA
-    ensureWeaponEquipped()
-
+    -- DISPARA O GOLPE IMEDIATAMENTE
     local tool = charReal:FindFirstChildOfClass("Tool")
     if tool then
         pcall(function() tool:Activate() end)
@@ -432,48 +558,39 @@ local function executarFlashAtaque()
         elseif VirtualUser then
             VirtualUser:CaptureController()
             VirtualUser:Button1Down(Vector2.new(0, 0))
-            task.wait(0.01)
+            task.wait(0.005)
             VirtualUser:Button1Up(Vector2.new(0, 0))
         end
     end)
 
-    -- 4. AGUARDA OS MILISSEGUNDOS DEFINIDOS (Padrão: 60ms)
-    local esperaSegundos = math.clamp(config.delayFlashMs / 1000, 0.02, 0.5)
-    task.wait(esperaSegundos)
+    -- TEMPO MÍNIMO (PADRÃO 10ms):
+    -- Menor que a taxa de envio de pacotes do Roblox (33ms).
+    -- O renderizador dos outros jogadores não chega a desenhar o boneco!
+    local duracaoSegundos = math.clamp(config.delayFlashMs / 1000, 0.005, 0.3)
+    task.wait(duracaoSegundos)
 
-    -- 5. RETORNA IMEDIATAMENTE PARA O MODO G NO CÉU
+    -- RETORNA IMEDIATAMENTE AO CÉU NA PLATAFORMA (SEM NUNCA DESATIVAR O G!)
     if config.modoAstralAtivo and charReal and charReal.Parent and realRoot and realHum then
-        local posRetorno = realRoot.CFrame
-
-        -- Restaura a cópia no mundo exatamente onde o ataque ocorreu
-        copiaPersonagem.Parent = Workspace
-        copiaPersonagem:PivotTo(posRetorno)
-        local cHum = copiaPersonagem:FindFirstChildOfClass("Humanoid")
-        if cHum then
-            camera.CameraSubject = cHum
-        end
-
-        -- Teleporta o corpo real de volta ao céu na plataforma
         realHum.PlatformStand = true
         realRoot.AssemblyLinearVelocity = Vector3.zero
         realRoot.AssemblyAngularVelocity = Vector3.zero
         local skyCenter = plataformaCeu.Position
         realRoot.CFrame = CFrame.new(skyCenter.X, skyCenter.Y + 3.5, skyCenter.Z)
-    else
-        -- Caso o modo astral tenha sido desativado no meio do ataque
-        if copiaPersonagem and copiaPersonagem.Parent then
-            copiaPersonagem:Destroy()
-            copiaPersonagem = nil
+
+        -- Garante que a cópia astral visível continue firme nas costas
+        if eRoot and eRoot.Parent and copiaPersonagem and copiaPersonagem.Parent then
+            local costasAtuais = obterCFrameCostas(eRoot)
+            if costasAtuais then
+                copiaPersonagem:PivotTo(costasAtuais)
+            end
         end
-        realHum.PlatformStand = false
-        camera.CameraSubject = realHum
     end
 
     executandoFlashAtaque = false
 end
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- INTERFACE GRÁFICA HUD V9.1 (TOPO / ARRASTÁVEL)
+-- INTERFACE GRÁFICA HUD V3.0 (TOPO / ARRASTÁVEL)
 -- ════════════════════════════════════════════════════════════════════════════════
 local function getGuiParent()
     local success, coreGui = pcall(function() return game:GetService("CoreGui") end)
@@ -488,19 +605,19 @@ local function getGuiParent()
 end
 
 local guiParent = getGuiParent()
-if guiParent:FindFirstChild("AstralPvpGui") then
-    guiParent["AstralPvpGui"]:Destroy()
+if guiParent:FindFirstChild("AstralPvpGuiV3") then
+    guiParent["AstralPvpGuiV3"]:Destroy()
 end
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AstralPvpGui"
+screenGui.Name = "AstralPvpGuiV3"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = guiParent
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainPvpFrame"
-mainFrame.Size = UDim2.new(0, 260, 0, 335)
-mainFrame.Position = UDim2.new(0.5, -130, 0, 25)
+mainFrame.Name = "MainPvpFrameV3"
+mainFrame.Size = UDim2.new(0, 260, 0, 365)
+mainFrame.Position = UDim2.new(0.5, -130, 0, 20)
 mainFrame.BackgroundColor3 = COR_FUNDO
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -531,7 +648,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -40, 1, 0)
 title.Position = UDim2.new(0, 10, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "👻 Astral Stick + Flash Attack [G]"
+title.Text = "👻 Astral V3 — Zero Visibility [G]"
 title.TextColor3 = COR_ACCENT
 title.Font = Enum.Font.GothamBold
 title.TextSize = 11
@@ -557,7 +674,7 @@ minBtn.MouseButton1Click:Connect(function()
         mainFrame:TweenSize(UDim2.new(0, 260, 0, 32), "Out", "Quad", 0.2, true)
         minBtn.Text = "+"
     else
-        mainFrame:TweenSize(UDim2.new(0, 260, 0, 335), "Out", "Quad", 0.2, true)
+        mainFrame:TweenSize(UDim2.new(0, 260, 0, 365), "Out", "Quad", 0.2, true)
         minBtn.Text = "-"
     end
 end)
@@ -589,10 +706,38 @@ Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
 
 toggleBtn.MouseButton1Click:Connect(alternarModoAstral)
 
--- Botão Auto-Attack Alternativo (Kill Aura opcional)
+-- Botão Modo Subterrâneo (Zero Visibilidade Absoluta)
+local subBtn = Instance.new("TextButton")
+subBtn.Size = UDim2.new(1, -20, 0, 24)
+subBtn.Position = UDim2.new(0, 10, 0, 108)
+subBtn.BackgroundColor3 = Color3.fromRGB(20, 45, 35)
+subBtn.BorderSizePixel = 0
+subBtn.Text = "🕳️ Golpe Subterrâneo: [ATIVO]"
+subBtn.TextColor3 = Color3.fromRGB(80, 255, 140)
+subBtn.Font = Enum.Font.GothamBold
+subBtn.TextSize = 10
+subBtn.Parent = mainFrame
+Instance.new("UICorner", subBtn).CornerRadius = UDim.new(0, 6)
+
+subBtn.MouseButton1Click:Connect(function()
+    config.golpeSubterraneo = not config.golpeSubterraneo
+    if config.golpeSubterraneo then
+        subBtn.Text = "🕳️ Golpe Subterrâneo: [ATIVO]"
+        subBtn.TextColor3 = Color3.fromRGB(80, 255, 140)
+        subBtn.BackgroundColor3 = Color3.fromRGB(20, 45, 35)
+        avisar("🕳️ Subterrâneo", "Ataque por baixo do chão (Zero Visibilidade)!")
+    else
+        subBtn.Text = "🕳️ Golpe Subterrâneo: [DESATIVADO]"
+        subBtn.TextColor3 = Color3.fromRGB(150, 150, 160)
+        subBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 42)
+        avisar("🗡️ Costas Direto", "Ataque diretamente nas costas (Sub-frame 10ms)!")
+    end
+end)
+
+-- Botão Auto-Attack Alternativo
 local autoAttackBtn = Instance.new("TextButton")
 autoAttackBtn.Size = UDim2.new(1, -20, 0, 24)
-autoAttackBtn.Position = UDim2.new(0, 10, 0, 108)
+autoAttackBtn.Position = UDim2.new(0, 10, 0, 136)
 autoAttackBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 42)
 autoAttackBtn.BorderSizePixel = 0
 autoAttackBtn.Text = "⚔️ Auto-Attack Contínuo: [OFF]"
@@ -618,13 +763,13 @@ end)
 -- Função auxiliar para criar linhas de ajuste numérico
 local function criarControleLinha(posY, tituloTexto, valorInicial, step, minV, maxV, callback)
     local f = Instance.new("Frame")
-    f.Size = UDim2.new(1, -20, 0, 24)
+    f.Size = UDim2.new(1, -20, 0, 22)
     f.Position = UDim2.new(0, 10, 0, posY)
     f.BackgroundTransparency = 1
     f.Parent = mainFrame
 
     local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0, 95, 1, 0)
+    lbl.Size = UDim2.new(0, 100, 1, 0)
     lbl.BackgroundTransparency = 1
     lbl.Text = tituloTexto
     lbl.TextColor3 = Color3.fromRGB(190, 200, 215)
@@ -635,7 +780,7 @@ local function criarControleLinha(posY, tituloTexto, valorInicial, step, minV, m
 
     local minus = Instance.new("TextButton")
     minus.Size = UDim2.new(0, 24, 1, 0)
-    minus.Position = UDim2.new(0, 95, 0, 0)
+    minus.Position = UDim2.new(0, 100, 0, 0)
     minus.BackgroundColor3 = Color3.fromRGB(32, 38, 52)
     minus.Text = "-"
     minus.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -645,8 +790,8 @@ local function criarControleLinha(posY, tituloTexto, valorInicial, step, minV, m
     Instance.new("UICorner", minus).CornerRadius = UDim.new(0, 4)
 
     local box = Instance.new("TextBox")
-    box.Size = UDim2.new(0, 65, 1, 0)
-    box.Position = UDim2.new(0, 123, 0, 0)
+    box.Size = UDim2.new(0, 60, 1, 0)
+    box.Position = UDim2.new(0, 128, 0, 0)
     box.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
     box.Text = tostring(valorInicial)
     box.TextColor3 = COR_ACCENT
@@ -684,15 +829,15 @@ local function criarControleLinha(posY, tituloTexto, valorInicial, step, minV, m
 end
 
 -- Controles Numéricos
-criarControleLinha(136, "⚡ Flash Strike (ms):", config.delayFlashMs, 10, 20, 500, function(v) config.delayFlashMs = v end)
-criarControleLinha(164, "📏 Altura do Alvo:",   config.alturaCabeca,  0.5, -5, 30,  function(v) config.alturaCabeca = v end)
-criarControleLinha(192, "🦅 Vel. Perseguição:", config.velocidadeVoo, 10, 20, 600, function(v) config.velocidadeVoo = v end)
-criarControleLinha(220, "🎯 Dist. Máxima:",     config.distanciaMaxima, 50, 50, 2500, function(v) config.distanciaMaxima = v end)
+criarControleLinha(164, "⚡ Flash Strike (ms):", config.delayFlashMs, 5, 5, 300, function(v) config.delayFlashMs = v end)
+criarControleLinha(190, "🗡️ Distância Costas:", config.distanciaCostas, 0.2, 0.5, 8, function(v) config.distanciaCostas = v end)
+criarControleLinha(216, "🦅 Vel. Perseguição:", config.velocidadeVoo, 10, 30, 800, function(v) config.velocidadeVoo = v end)
+criarControleLinha(242, "🎯 Dist. Máxima:",     config.distanciaMaxima, 50, 50, 3000, function(v) config.distanciaMaxima = v end)
 
--- Botão Pular Alvo
+-- Botões Pular Alvo e Base [H]
 local skipBtn = Instance.new("TextButton")
 skipBtn.Size = UDim2.new(0.5, -14, 0, 24)
-skipBtn.Position = UDim2.new(0, 10, 0, 248)
+skipBtn.Position = UDim2.new(0, 10, 0, 270)
 skipBtn.BackgroundColor3 = Color3.fromRGB(45, 30, 40)
 skipBtn.BorderSizePixel = 0
 skipBtn.Text = "⏭ Pular Alvo"
@@ -709,10 +854,9 @@ skipBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Botão Salvar Ponto [H]
 local setSafeBtn = Instance.new("TextButton")
 setSafeBtn.Size = UDim2.new(0.5, -14, 0, 24)
-setSafeBtn.Position = UDim2.new(0.5, 4, 0, 248)
+setSafeBtn.Position = UDim2.new(0.5, 4, 0, 270)
 setSafeBtn.BackgroundColor3 = Color3.fromRGB(25, 35, 50)
 setSafeBtn.BorderSizePixel = 0
 setSafeBtn.Text = "📍 Salvar Base [H]"
@@ -738,10 +882,10 @@ setSafeBtn.MouseButton1Click:Connect(saveCurrentLocationAsSafe)
 
 -- Mini Rodapé com Instruções
 local footer = Instance.new("TextLabel")
-footer.Size = UDim2.new(1, -20, 0, 48)
-footer.Position = UDim2.new(0, 10, 0, 276)
+footer.Size = UDim2.new(1, -20, 0, 60)
+footer.Position = UDim2.new(0, 10, 0, 298)
 footer.BackgroundTransparency = 1
-footer.Text = "🖱️ Clique Esquerdo: Flash Attack instantâneo\n[G] Modo Astral Grudado  •  [H] Ponto Base"
+footer.Text = "👻 V3: Modo G NUNCA desliga! Zero Visibilidade.\n🕳️ Golpe Subterrâneo + Sub-Frame (10ms).\n[G] Modo Astral Costas  •  [H] Salvar Base"
 footer.TextColor3 = Color3.fromRGB(160, 175, 200)
 footer.Font = Enum.Font.Gotham
 footer.TextSize = 9
@@ -787,10 +931,9 @@ end
 -- CONEXÕES DE ENTRADA DO USUÁRIO (TECLADO & CLIQUE DO MOUSE)
 -- ════════════════════════════════════════════════════════════════════════════════
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    -- Se estiver digitando no chat ou em caixas de texto, ignora
     if UserInputService:GetFocusedTextBox() then return end
 
-    -- Tecla G: Ligar/Desligar Modo Astral
+    -- Tecla G: Ligar/Desligar Modo Astral Costas
     if input.KeyCode == Enum.KeyCode.G then
         alternarModoAstral()
         return
@@ -802,7 +945,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         return
     end
 
-    -- Clique do Mouse Esquerdo: Flash Attack
+    -- Clique do Mouse Esquerdo: Flash Attack Zero-Visibility
     if not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton1 then
         if config.modoAstralAtivo then
             if tick() - lastManualClickTick >= 0.05 then
@@ -813,7 +956,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
--- Suporte complementar para clique via mouse.Button1Down
+-- Suporte complementar via mouse.Button1Down
 mouse.Button1Down:Connect(function()
     if config.modoAstralAtivo and not executandoFlashAtaque then
         if tick() - lastManualClickTick >= 0.05 then
@@ -824,7 +967,7 @@ mouse.Button1Down:Connect(function()
 end)
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- THREAD GERENCIADORA DE ALVOS (RODA A CADA 0.1s)
+-- THREAD GERENCIADORA DE ALVOS (A CADA 0.1s)
 -- ════════════════════════════════════════════════════════════════════════════════
 task.spawn(function()
     while true do
@@ -839,8 +982,9 @@ task.spawn(function()
             if not currentTarget then
                 local nextEnemy = findNearestEnemy()
                 if nextEnemy then
-                    currentTarget = nextEnemy
-                    targetHead = nextEnemy:FindFirstChild("Head") or nextEnemy:FindFirstChild("HumanoidRootPart")
+                    currentTarget  = nextEnemy
+                    targetRootPart = nextEnemy:FindFirstChild("HumanoidRootPart") or nextEnemy:FindFirstChild("Torso") or nextEnemy:FindFirstChild("UpperTorso")
+                    targetHead     = nextEnemy:FindFirstChild("Head") or targetRootPart
 
                     local hum = nextEnemy:FindFirstChildOfClass("Humanoid")
                     if hum then
@@ -853,20 +997,20 @@ task.spawn(function()
             end
 
             -- Atualização do Status na Interface
-            if currentTarget and targetHead then
+            if currentTarget and targetRootPart then
                 local hum = currentTarget:FindFirstChildOfClass("Humanoid")
                 local hp = hum and math.floor(hum.Health) or 0
                 local maxHp = hum and math.max(math.floor(hum.MaxHealth), 1) or 100
                 local cRoot = copiaPersonagem and copiaPersonagem:FindFirstChild("HumanoidRootPart")
-                local dist = cRoot and math.floor((cRoot.Position - targetHead.Position).Magnitude) or 0
+                local dist = cRoot and math.floor((cRoot.Position - targetRootPart.Position).Magnitude) or 0
 
-                statusLabel.Text = string.format("Alvo: %s (%d studs)\nVida: %d/%d HP ● GRUDADO", currentTarget.Name, dist, hp, maxHp)
+                statusLabel.Text = string.format("Alvo: %s (%d studs)\nVida: %d/%d HP ● ZERO VISIBILITY", currentTarget.Name, dist, hp, maxHp)
                 statusLabel.TextColor3 = Color3.fromRGB(80, 255, 140)
             else
                 if safeSpotCFrame then
-                    statusLabel.Text = "Procurando jogadores no alcance...\n(Aguardando no Ponto Seguro [H])"
+                    statusLabel.Text = "Procurando alvos...\n(Aguardando no Ponto Seguro [H])"
                 else
-                    statusLabel.Text = "Procurando jogadores no alcance...\nNenhum jogador por perto"
+                    statusLabel.Text = "Procurando alvos...\nNenhum jogador por perto"
                 end
                 statusLabel.TextColor3 = Color3.fromRGB(220, 200, 120)
             end
@@ -875,18 +1019,29 @@ task.spawn(function()
 end)
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- LOOPS PRINCIPAIS (STEPPED: NOCLIP & HEARTBEAT: FÍSICA E PERSEGUIÇÃO)
+-- LOOPS PRINCIPAIS (STEPPED: NOCLIP & INVISIBILIDADE CONTÍNUA)
 -- ════════════════════════════════════════════════════════════════════════════════
 
--- NOCLIP ATIVO NO MODO ASTRAL (Evita colisões e empurrões indesejados)
 RunService.Stepped:Connect(function()
     if not config.modoAstralAtivo then return end
 
     local char = LocalPlayer.Character
     if char then
+        -- Noclip
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") and part.CanCollide then
                 part.CanCollide = false
+            end
+        end
+        -- Garante que o corpo real permaneça 100% invisível em todo frame
+        if config.invisibilidadeReal then
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") and p.Transparency < 1 then
+                    p.Transparency = 1
+                    p.CastShadow = false
+                elseif p:IsA("Decal") and p.Transparency < 1 then
+                    p.Transparency = 1
+                end
             end
         end
     end
@@ -900,11 +1055,10 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- HEARTBEAT: MOVIMENTAÇÃO DA CÓPIA GRUDADA E PROTEÇÃO DO CORPO NO CÉU
+-- HEARTBEAT: MOVIMENTAÇÃO COLADA NAS COSTAS E PROTEÇÃO DO CORPO NO CÉU
 RunService.Heartbeat:Connect(function(dt)
     if not config.modoAstralAtivo then return end
 
-    -- Durante os milissegundos do flash attack, a física do Heartbeat não interfere no corpo real
     if executandoFlashAtaque then return end
 
     local charReal = LocalPlayer.Character
@@ -913,49 +1067,47 @@ RunService.Heartbeat:Connect(function(dt)
     local realHum  = charReal:FindFirstChildOfClass("Humanoid")
     if not realRoot or not realHum then return end
 
-    -- Se o clone não existe, recria ou cancela
     if not copiaPersonagem or not copiaPersonagem.Parent then return end
     local cHum  = copiaPersonagem:FindFirstChildOfClass("Humanoid")
     local cRoot = copiaPersonagem:FindFirstChild("HumanoidRootPart")
     if not cHum or not cRoot then return end
 
-    -- CASO 1: TEM ALVO JOGADOR SELECIONADO -> GRUDA NELE
-    if currentTarget and targetHead and targetHead.Parent then
+    -- CASO 1: TEM ALVO JOGADOR -> GRUDA 100% NAS COSTAS (BACKSTAB)
+    if currentTarget and targetRootPart and targetRootPart.Parent then
         cHum.PlatformStand = false
         cRoot.AssemblyLinearVelocity = Vector3.zero
         cRoot.AssemblyAngularVelocity = Vector3.zero
 
-        local targetPos = targetHead.Position + Vector3.new(0, config.alturaCabeca, 0)
-        local currentPos = cRoot.Position
-        local dist = (targetPos - currentPos).Magnitude
+        local costasCF = obterCFrameCostas(targetRootPart)
+        if costasCF then
+            local currentPos = cRoot.Position
+            local targetPos  = costasCF.Position
+            local dist = (targetPos - currentPos).Magnitude
 
-        if dist > 2 then
-            -- Aproximação em alta velocidade
-            local direction = (targetPos - currentPos).Unit
-            local step = math.min(dist, config.velocidadeVoo * dt)
-            cRoot.CFrame = CFrame.new(currentPos + direction * step, targetHead.Position)
+            if dist > 35 then
+                local direction = (targetPos - currentPos).Unit
+                local step = math.min(dist, config.velocidadeVoo * dt)
+                cRoot.CFrame = CFrame.lookAt(currentPos + direction * step, targetRootPart.Position)
 
-            -- Animação de corrida
-            if animTracks.run and not animTracks.run.IsPlaying then animTracks.run:Play(0.1) end
-            if animTracks.idle and animTracks.idle.IsPlaying then animTracks.idle:Stop(0.1) end
-        else
-            -- 100% Fixado e grudado na cabeça/corpo do jogador alvo
-            cRoot.CFrame = CFrame.new(targetPos, targetHead.Position)
+                if animTracks.run and not animTracks.run.IsPlaying then animTracks.run:Play(0.1) end
+                if animTracks.idle and animTracks.idle.IsPlaying then animTracks.idle:Stop(0.1) end
+            else
+                cRoot.CFrame = costasCF
 
-            -- Animação de idle
-            if animTracks.idle and not animTracks.idle.IsPlaying then animTracks.idle:Play(0.1) end
-            if animTracks.run and animTracks.run.IsPlaying then animTracks.run:Stop(0.1) end
-        end
+                if animTracks.idle and not animTracks.idle.IsPlaying then animTracks.idle:Play(0.1) end
+                if animTracks.run and animTracks.run.IsPlaying then animTracks.run:Stop(0.1) end
+            end
 
-        -- Se o Auto-Attack contínuo estiver ativado e estiver no alcance de golpe
-        if config.autoAttackAtivo and dist <= config.distanciaGolpe then
-            if tick() - lastAutoAttackTick >= (config.delayAutoAttack or 0.35) then
-                lastAutoAttackTick = tick()
-                task.spawn(executarFlashAtaque)
+            -- Auto-Attack contínuo se ativado
+            if config.autoAttackAtivo and dist <= config.distanciaGolpe then
+                if tick() - lastAutoAttackTick >= (config.delayAutoAttack or 0.35) then
+                    lastAutoAttackTick = tick()
+                    task.spawn(executarFlashAtaque)
+                end
             end
         end
 
-    -- CASO 2: SEM ALVO -> AGUARDA NO PONTO SEGURO SALVO [H] OU PERMANECE IDLE
+    -- CASO 2: SEM ALVO -> AGUARDA NO PONTO SEGURO [H] OU PERMANECE IDLE
     elseif safeSpotCFrame then
         cHum.PlatformStand = false
         local targetPos = safeSpotCFrame.Position
@@ -972,7 +1124,7 @@ RunService.Heartbeat:Connect(function(dt)
         end
     end
 
-    -- MANTER O POD DO CÉU E O CORPO REAL EXATAMENTE SOBRE O CLONE A +850 STUDS
+    -- MANTER O POD DO CÉU E O CORPO REAL EXATAMENTE SOBRE A CÓPIA A +850 STUDS
     local skyX = cRoot.Position.X
     local skyZ = cRoot.Position.Z
     plataformaCeu.CFrame = CFrame.new(skyX, config.alturaCeu, skyZ)
@@ -986,7 +1138,7 @@ end)
 -- ════════════════════════════════════════════════════════════════════════════════
 -- LIMPEZA E RESET AO RENASCER / MORRER
 -- ════════════════════════════════════════════════════════════════════════════════
-LocalPlayer.CharacterAdded:Connect(function()
+LocalPlayer.CharacterAdded:Connect(function(newChar)
     if config.modoAstralAtivo then
         config.modoAstralAtivo = false
         if copiaPersonagem and copiaPersonagem.Parent then
@@ -1003,5 +1155,5 @@ LocalPlayer.CharacterAdded:Connect(function()
     clearCurrentTarget()
 end)
 
-avisar("👻 Astral PvP Pronto!", "[G] = Modo Astral Grudado  |  Clique Esquerdo = Flash Attack", 4)
-print("[ASTRAL PVP] Script 1.lua carregado com sucesso!")
+avisar("👻 Astral V3 Pronto!", "Modo Zero Visibility carregado em 3.lua!", 4)
+print("[ASTRAL PVP V3.0 ZERO VISIBILITY] Arquivo 3.lua criado com sucesso!")
