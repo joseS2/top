@@ -1,984 +1,507 @@
 --[[
-    ═══════════════════════════════════════════════════════════════════════════════
-    👻 MODO ASTRAL PVP V6.0 — QUANTUM GHOST FREE-WALK & SKILL STRIKE (Z, X, C, V)
-    ═══════════════════════════════════════════════════════════════════════════════
-    ARQUIVO: 6.lua
-
-    COMO FUNCIONA ESTA VERSÃO:
+    ==============================================================================
+    BADGE SYSTEM ULTIMATE - V2.LUA
+    ==============================================================================
+    Versão aprimorada, lapidada e otimizada.
     
-    1. Modo G com Caminhada Livre (SEM GRUDAR AUTOMÁTICO):
-       • Ao apertar [G], você NÃO gruda em nenhum jogador automaticamente.
-       • Você ganha controle total do seu clone no chão: pode andar (W, A, S, D),
-         correr com [Shift] e pular com [Espaço] livremente pelo mapa!
-       • O seu corpo físico real fica 100% seguro na plataforma celestial a +850 studs,
-         acompanhando a sua posição X e Z em tempo real pelo céu.
-
-    2. Ataque com Clique do Mouse:
-       • Ao clicar com o [Botão Esquerdo do Mouse]:
-         O seu corpo real desce instantaneamente na posição da cópia, fica visível
-         por milissegundos, desferindo o ataque da sua arma/clique, e retorna em
-         milissegundos com segurança para o céu!
-
-    3. Ataque com Habilidades / Skills [Z], [X], [C], [V]:
-       • Ao apertar qualquer tecla de skill: [Z], [X], [C] ou [V]:
-         O seu corpo real desce imediatamente onde você está andando com a cópia,
-         torna-se visível no chão pelo tempo exato para disparar a skill do jogo,
-         e imediatamente retorna em segurança para a plataforma no céu!
-
-    4. Blindagem Anti-Dano Ativa (God-Shield):
-       • Suas partes do corpo real têm CanTouch = FALSE (espadas e golpes inimigos
-         passam direto por você sem causar dano).
-       • A sua arma mantém CanTouch = TRUE para acertar o inimigo com força máxima.
-
-    5. Trava Opcional de Jogador [R] e Alternador de Lado [T]:
-       • Se quiser travar nas costas de alguém manualmente, basta apertar [R].
-       • Aperte [T] para alternar entre ficar nas [COSTAS] ou na [FRENTE].
-    ═══════════════════════════════════════════════════════════════════════════════
+    Novidades da V2:
+    - Interface Gráfica (GUI) moderna, flutuante, arrastável e com barra de progresso.
+    - Suporte a Mobile e PC com controle de pausa/retomada.
+    - Sistema Anti-AFK integrado (evita ser desconectado por inatividade).
+    - Suporte avançado a múltiplos métodos de acionamento:
+        * TouchTransmitters (firetouchinterest)
+        * ProximityPrompts (fireproximityprompt)
+        * ClickDetectors (fireclickdetector)
+        * Teletransporte seguro com Noclip (para evitar morrer ou ficar preso)
+    - Filtro inteligente de duplicatas (não gasta pacotes repetindo a mesma parte).
+    - Modo Servidor (Studio) com cache em memória, fila de entrega, tratamento
+      estrito de Rate-Limit da BadgeService e comandos de chat (/giveall, /giveme).
+    ==============================================================================
 ]]
 
--- SERVICES
-local Workspace        = game:GetService("Workspace")
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local StarterGui       = game:GetService("StarterGui")
-local TweenService     = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 
-local LocalPlayer = Players.LocalPlayer
-local camera      = Workspace.CurrentCamera
-local mouse       = LocalPlayer:GetMouse()
+-- ==============================================================================
+-- CONFIGURAÇÕES GERAIS (Personalize conforme sua necessidade)
+-- ==============================================================================
+local Config = {
+    -- Configurações do Cliente / Executor
+    Client = {
+        ScanInterval = 0.03,            -- Delay entre cada badge (evita lag e desconexão)
+        UseAntiAfk = true,              -- Impede desconexão após 20 minutos inativo
+        AutoStart = true,               -- Começa a escanear assim que carregar o script
+        ScanKeywords = {                -- Palavras-chave para identificar blocos de badge
+            "badge", "emblema", "giver", "trophy", "trofeu", "award", "freebadge", "pad"
+        },
+        TeleportFallback = true,        -- Se o executor não tiver firetouchinterest, usa teleporte suave
+        NoclipOnTeleport = true,        -- Desativa colisão ao teleportar para evitar travar na parede
+    },
 
--- VirtualUser para simulação de cliques e teclas
-local VirtualUser = nil
-pcall(function()
-    VirtualUser = game:GetService("VirtualUser")
-end)
-
--- ════════════════════════════════════════════════════════════════════════════════
--- CONFIGURAÇÕES PRINCIPAIS V6.0
--- ════════════════════════════════════════════════════════════════════════════════
-local config = {
-    modoAstralAtivo     = false,      -- Começa desligado até apertar [G]
-    grudarAuto          = false,      -- NÃO gruda automaticamente (anda livre pelo mapa!)
-    travaManualAtiva    = false,      -- Trava manual opcional no alvo mais próximo [R]
-    posicaoAlvo         = "costas",   -- "costas" ou "frente" (quando a trava manual estiver ligada)
-    alturaCeu           = 850,        -- Altura segura no céu (studs)
-    velocidadePadrao    = 16,         -- Velocidade padrão da cópia ao andar
-    velocidadeSprint    = 32,         -- Velocidade ao correr com [Shift]
-    distanciaRelativa   = 2.2,        -- Distância do alvo na trava manual
-    alturaRelativa      = 0.2,        -- Altura relativa ao alvo
-    distanciaMaxima     = 800,        -- Alcance máximo do radar
-
-    -- Temporizadores de Visibilidade / Retorno
-    delayFlashMouseMs   = 70,         -- Tempo visível no chão ao clicar com o Mouse (70ms)
-    delayFlashSkillMs   = 110,        -- Tempo visível no chão ao usar Z, X, C, V (110ms)
-    
-    -- Blindagem & Defesa
-    godShieldAtivo      = true,       -- CanTouch = false no corpo para evitar tomar dano
-    forceFieldAtivo     = true,       -- ForceField invisível para proteção de scripts
-    golpeSubterraneo    = false,      -- Golpe subterrâneo opcional (-4.5 studs)
-    offsetSubterraneo   = 4.5,
-
-    -- Auto Attack Opcional
-    autoAttackAtivo     = false,
-    delayAutoAttack     = 0.35,
+    -- Configurações do Servidor / Roblox Studio
+    Server = {
+        DelayBetweenAwards = 0.15,      -- Respeita o rate limit do BadgeService
+        AwardOnJoin = true,             -- Concede automaticamente quando um player entrar
+        UseProxy = true,                -- Usa RoProxy para contornar bloqueio de chamadas diretas
+        ProxyUrl = "https://badges.roproxy.com/v1/universes/%d/badges?limit=100&cursor=%s",
+        AdminIds = {                    -- Adicione aqui os UserIds com permissão para usar comandos de chat
+            -- [12345678] = true,
+        }
+    }
 }
 
--- CORES DO TEMA
-local COR_ACCENT = Color3.fromRGB(168, 85, 247)  -- Roxo Neon Astral
-local COR_VERDE  = Color3.fromRGB(80, 255, 140)  -- Verde Neon
-local COR_AZUL   = Color3.fromRGB(56, 189, 248)  -- Azul Celeste
-local COR_FUNDO  = Color3.fromRGB(10, 13, 20)    -- Dark Void
+-- ==============================================================================
+-- MODO 1: CLIENTE / EXECUTOR (Delta, Arceus X, Solara, Wave, Synapse, etc.)
+-- ==============================================================================
+if RunService:IsClient() then
+    local TweenService = game:GetService("TweenService")
+    local UserInputService = game:GetService("UserInputService")
+    local LocalPlayer = Players.LocalPlayer
 
--- VARIÁVEIS DE ESTADO
-local copiaPersonagem       = nil
-local plataformaCeu         = nil
-local animTracks            = {}
-local currentTarget         = nil
-local targetRootPart        = nil
-local targetHead            = nil
-local diedConn              = nil
-local safeSpotCFrame        = nil
-local executandoFlashAcao   = false
-local lastAutoAttackTick    = 0
-local activeForceField      = nil
-
--- ESTADO DAS TECLAS DE MOVIMENTAÇÃO (WASD + SHIFT + SPACE)
-local teclasPressionadas = {
-    W     = false,
-    A     = false,
-    S     = false,
-    D     = false,
-    Shift = false,
-    Space = false,
-}
-
--- ════════════════════════════════════════════════════════════════════════════════
--- SISTEMA DE NOTIFICAÇÕES VISUAIS
--- ════════════════════════════════════════════════════════════════════════════════
-local function avisar(titulo, texto, tempo)
-    tempo = tempo or 3
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title    = titulo,
-            Text     = texto,
-            Duration = tempo
-        })
-    end)
-end
-
--- ════════════════════════════════════════════════════════════════════════════════
--- CRIAÇÃO DA PLATAFORMA CELESTIAL SEGURA (+850 STUDS)
--- ════════════════════════════════════════════════════════════════════════════════
-local function obterPlataformaCeu()
-    if plataformaCeu and plataformaCeu.Parent then
-        return plataformaCeu
+    -- 1. Anti-AFK
+    if Config.Client.UseAntiAfk then
+        LocalPlayer.Idled:Connect(function()
+            local VirtualUser = game:GetService("VirtualUser")
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new(0, 0))
+            print("[Badge v2] Anti-AFK acionado com sucesso.")
+        end)
     end
 
-    local existing = Workspace:FindFirstChild("PlataformaCeu_AstralV6")
-    if existing then
-        plataformaCeu = existing
-        return plataformaCeu
+    -- 2. Construção da Interface Gráfica (HUD Moderna e Responsiva)
+    local function createModernGui()
+        local parentGui = (gethui and gethui()) or game:GetService("CoreGui"):FindFirstChild("RobloxGui") or LocalPlayer:WaitForChild("PlayerGui")
+        
+        -- Remove versão antiga se existir
+        local old = parentGui:FindFirstChild("BadgeMasterV2_Gui")
+        if old then old:Destroy() end
+
+        local screen = Instance.new("ScreenGui")
+        screen.Name = "BadgeMasterV2_Gui"
+        screen.ResetOnSpawn = false
+        screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+        -- Container Principal
+        local main = Instance.new("Frame")
+        main.Name = "MainFrame"
+        main.Size = UDim2.new(0, 320, 0, 190)
+        main.Position = UDim2.new(0.5, -160, 0.2, 0)
+        main.BackgroundColor3 = Color3.fromRGB(24, 26, 32)
+        main.BorderSizePixel = 0
+        main.Active = true
+        main.ClipsDescendants = true
+        main.Parent = screen
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 10)
+        corner.Parent = main
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = Color3.fromRGB(60, 65, 80)
+        stroke.Thickness = 1.2
+        stroke.Parent = main
+
+        -- Barra de Título
+        local titleBar = Instance.new("Frame")
+        titleBar.Size = UDim2.new(1, 0, 0, 36)
+        titleBar.BackgroundColor3 = Color3.fromRGB(32, 35, 45)
+        titleBar.BorderSizePixel = 0
+        titleBar.Parent = main
+
+        local titleCorner = Instance.new("UICorner")
+        titleCorner.CornerRadius = UDim.new(0, 10)
+        titleCorner.Parent = titleBar
+
+        local titleText = Instance.new("TextLabel")
+        titleText.Size = UDim2.new(1, -70, 1, 0)
+        titleText.Position = UDim2.new(0, 12, 0, 0)
+        titleText.BackgroundTransparency = 1
+        titleText.Text = "⚡ BADGE MASTER V2"
+        titleText.TextColor3 = Color3.fromRGB(240, 240, 245)
+        titleText.TextSize = 13
+        titleText.Font = Enum.Font.GothamBold
+        titleText.TextXAlignment = Enum.TextXAlignment.Left
+        titleText.Parent = titleBar
+
+        -- Botão Fechar
+        local closeBtn = Instance.new("TextButton")
+        closeBtn.Size = UDim2.new(0, 28, 0, 28)
+        closeBtn.Position = UDim2.new(1, -32, 0, 4)
+        closeBtn.BackgroundColor3 = Color3.fromRGB(45, 48, 60)
+        closeBtn.Text = "✕"
+        closeBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
+        closeBtn.TextSize = 12
+        closeBtn.Font = Enum.Font.GothamBold
+        closeBtn.BorderSizePixel = 0
+        closeBtn.Parent = titleBar
+
+        local closeCorner = Instance.new("UICorner")
+        closeCorner.CornerRadius = UDim.new(0, 6)
+        closeCorner.Parent = closeBtn
+
+        closeBtn.MouseButton1Click:Connect(function()
+            screen:Destroy()
+        end)
+
+        -- Status e Contadores
+        local statusLabel = Instance.new("TextLabel")
+        statusLabel.Size = UDim2.new(1, -24, 0, 18)
+        statusLabel.Position = UDim2.new(0, 12, 0, 46)
+        statusLabel.BackgroundTransparency = 1
+        statusLabel.Text = "Status: Aguardando início..."
+        statusLabel.TextColor3 = Color3.fromRGB(170, 175, 195)
+        statusLabel.TextSize = 11
+        statusLabel.Font = Enum.Font.GothamMedium
+        statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+        statusLabel.Parent = main
+
+        local counterLabel = Instance.new("TextLabel")
+        counterLabel.Size = UDim2.new(1, -24, 0, 22)
+        counterLabel.Position = UDim2.new(0, 12, 0, 68)
+        counterLabel.BackgroundTransparency = 1
+        counterLabel.Text = "0 / 0 badges processadas (0%)"
+        counterLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        counterLabel.TextSize = 13
+        counterLabel.Font = Enum.Font.GothamBold
+        counterLabel.TextXAlignment = Enum.TextXAlignment.Left
+        counterLabel.Parent = main
+
+        -- Barra de Progresso (Fundo)
+        local progressBg = Instance.new("Frame")
+        progressBg.Size = UDim2.new(1, -24, 0, 8)
+        progressBg.Position = UDim2.new(0, 12, 0, 98)
+        progressBg.BackgroundColor3 = Color3.fromRGB(40, 44, 56)
+        progressBg.BorderSizePixel = 0
+        progressBg.Parent = main
+
+        local bgCorner = Instance.new("UICorner")
+        bgCorner.CornerRadius = UDim.new(1, 0)
+        bgCorner.Parent = progressBg
+
+        -- Barra de Progresso (Preenchimento)
+        local progressFill = Instance.new("Frame")
+        progressFill.Size = UDim2.new(0, 0, 1, 0)
+        progressFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+        progressFill.BorderSizePixel = 0
+        progressFill.Parent = progressBg
+
+        local fillCorner = Instance.new("UICorner")
+        fillCorner.CornerRadius = UDim.new(1, 0)
+        fillCorner.Parent = progressFill
+
+        -- Botão de Ação (Iniciar / Parar)
+        local actionBtn = Instance.new("TextButton")
+        actionBtn.Size = UDim2.new(1, -24, 0, 36)
+        actionBtn.Position = UDim2.new(0, 12, 0, 122)
+        actionBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+        actionBtn.Text = "INICIAR COLETA"
+        actionBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        actionBtn.TextSize = 12
+        actionBtn.Font = Enum.Font.GothamBold
+        actionBtn.BorderSizePixel = 0
+        actionBtn.Parent = main
+
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 8)
+        btnCorner.Parent = actionBtn
+
+        -- Sistema de Arrastar da Janela (Mobile e PC)
+        local dragging, dragStart, startPos
+        titleBar.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = main.Position
+            end
+        end)
+
+        UserInputService.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - dragStart
+                main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
+        end)
+
+        local function endDrag() dragging = false end
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                endDrag()
+            end
+        end)
+
+        screen.Parent = parentGui
+        return {
+            Screen = screen,
+            Status = statusLabel,
+            Counter = counterLabel,
+            ProgressFill = progressFill,
+            ActionBtn = actionBtn
+        }
     end
 
-    local p = Instance.new("Part")
-    p.Name         = "PlataformaCeu_AstralV6"
-    p.Size         = Vector3.new(20, 2, 20)
-    p.CFrame       = CFrame.new(0, -9999, 0)
-    p.Anchored     = true
-    p.CanCollide   = true
-    p.Transparency = 1
-    p.Material     = Enum.Material.ForceField
-    p.Color        = Color3.fromRGB(168, 85, 247)
-    p.Parent       = Workspace
-    plataformaCeu  = p
-    return plataformaCeu
-end
-obterPlataformaCeu()
+    -- 3. Motor de Coleta de Badges (Scanner + Dispatcher)
+    local UI = createModernGui()
+    local isRunning = false
+    local shouldStop = false
 
--- ════════════════════════════════════════════════════════════════════════════════
--- BLINDAGEM GOD-SHIELD (CanTouch = false no corpo, CanTouch = true na arma)
--- ════════════════════════════════════════════════════════════════════════════════
-local function aplicarBlindagemReal(char)
-    if not char then return end
+    local function getTargets()
+        local targets = {}
+        local seen = {}
 
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            local isToolPart = part:FindFirstAncestorOfClass("Tool") ~= nil
-            if not isToolPart then
-                pcall(function()
-                    part.CanTouch   = false
-                    part.CanCollide = false
-                end)
-            else
-                pcall(function()
-                    part.CanTouch = true
-                end)
+        local function addTarget(part, kind, extra)
+            if part and part:IsA("BasePart") and not seen[part] then
+                seen[part] = true
+                table.insert(targets, {
+                    Part = part,
+                    Kind = kind or "Touch",
+                    Extra = extra
+                })
             end
         end
-    end
 
-    if config.forceFieldAtivo then
-        local ff = char:FindFirstChildOfClass("ForceField")
-        if not ff then
-            ff = Instance.new("ForceField")
-            ff.Name = "AstralShield_Protected"
-            ff.Visible = false
-            ff.Parent = char
-        end
-        activeForceField = ff
-    end
-end
-
-local function removerBlindagemReal(char)
-    if not char then return end
-
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            pcall(function()
-                part.CanTouch = true
-            end)
-        end
-    end
-
-    if activeForceField and activeForceField.Parent then
-        activeForceField:Destroy()
-        activeForceField = nil
-    end
-end
-
--- ════════════════════════════════════════════════════════════════════════════════
--- SISTEMA DE ANIMAÇÕES DA CÓPIA (IDLE, WALK, RUN, JUMP)
--- ════════════════════════════════════════════════════════════════════════════════
-local function obterAnimIdAtiva(nome)
-    local char = LocalPlayer.Character
-    if not char then return nil end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return nil end
-    local anim = hum:FindFirstChildOfClass("Animator")
-    if not anim then return nil end
-
-    for _, track in ipairs(anim:GetPlayingAnimationTracks()) do
-        local n = string.lower(track.Name)
-        if string.find(n, nome) and track.Animation and track.Animation.AnimationId ~= "" then
-            return track.Animation.AnimationId
-        end
-    end
-    return nil
-end
-
-local function extrairAnimId(nomeChild, nomeVal)
-    local char = LocalPlayer.Character
-    if not char then return nil end
-    local animate = char:FindFirstChild("Animate")
-    if not animate then return nil end
-    local folder = animate:FindFirstChild(nomeChild)
-    if not folder then return nil end
-    local animVal = folder:FindFirstChild(nomeVal) or folder:FindFirstChildOfClass("Animation")
-    if animVal and animVal:IsA("Animation") and animVal.AnimationId ~= "" then
-        return animVal.AnimationId
-    end
-    return nil
-end
-
-local function configurarAnimacoes(modelo, humAlvo)
-    if not modelo or not humAlvo then return end
-
-    for _, track in pairs(animTracks) do
-        pcall(function() track:Stop() track:Destroy() end)
-    end
-    table.clear(animTracks)
-
-    local cAnimator = humAlvo:FindFirstChildOfClass("Animator")
-    if not cAnimator then
-        cAnimator = Instance.new("Animator")
-        cAnimator.Parent = humAlvo
-    end
-
-    for _, trk in ipairs(cAnimator:GetPlayingAnimationTracks()) do
-        pcall(function() trk:Stop() end)
-    end
-
-    local isR15 = (modelo:FindFirstChild("UpperTorso")) ~= nil
-
-    local runId = obterAnimIdAtiva("run")
-        or obterAnimIdAtiva("walk")
-        or extrairAnimId("run", "RunAnim")
-        or extrairAnimId("walk", "WalkAnim")
-        or (isR15 and "rbxassetid://507767714" or "rbxassetid://180426354")
-
-    local walkId = obterAnimIdAtiva("walk")
-        or extrairAnimId("walk", "WalkAnim")
-        or runId
-
-    local idleId = obterAnimIdAtiva("idle")
-        or extrairAnimId("idle", "Animation1")
-        or (isR15 and "rbxassetid://507766666" or "rbxassetid://180435571")
-
-    local jumpId = obterAnimIdAtiva("jump")
-        or extrairAnimId("jump", "JumpAnim")
-        or (isR15 and "rbxassetid://507765000" or "rbxassetid://125750702")
-
-    pcall(function()
-        local aRun = Instance.new("Animation")
-        aRun.AnimationId = runId
-        animTracks.run = cAnimator:LoadAnimation(aRun)
-        animTracks.run.Looped = true
-        animTracks.run.Priority = Enum.AnimationPriority.Movement
-
-        local aWalk = Instance.new("Animation")
-        aWalk.AnimationId = walkId
-        animTracks.walk = cAnimator:LoadAnimation(aWalk)
-        animTracks.walk.Looped = true
-        animTracks.walk.Priority = Enum.AnimationPriority.Movement
-
-        local aIdle = Instance.new("Animation")
-        aIdle.AnimationId = idleId
-        animTracks.idle = cAnimator:LoadAnimation(aIdle)
-        animTracks.idle.Looped = true
-        animTracks.idle.Priority = Enum.AnimationPriority.Idle
-        animTracks.idle:Play(0.1)
-
-        local aJump = Instance.new("Animation")
-        aJump.AnimationId = jumpId
-        animTracks.jump = cAnimator:LoadAnimation(aJump)
-        animTracks.jump.Looped = false
-        animTracks.jump.Priority = Enum.AnimationPriority.Action
-    end)
-end
-
--- ════════════════════════════════════════════════════════════════════════════════
--- SISTEMA DE DETECÇÃO DE INIMIGOS (PARA A TRAVA MANUAL [R])
--- ════════════════════════════════════════════════════════════════════════════════
-local function isEnemyAlive(model)
-    if not model or not model:IsA("Model") then return false end
-    if not model:IsDescendantOf(Workspace) then return false end
-    if model == LocalPlayer.Character then return false end
-    if copiaPersonagem and model == copiaPersonagem then return false end
-
-    local p = Players:GetPlayerFromCharacter(model)
-    if not p then return false end
-
-    local hum = model:FindFirstChildOfClass("Humanoid")
-    local rootPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso")
-    local head = model:FindFirstChild("Head") or rootPart
-
-    if not hum or not rootPart or not head then return false end
-    if hum.Health <= 0 then return false end
-
-    return true
-end
-
-local function clearCurrentTarget()
-    if diedConn then
-        diedConn:Disconnect()
-        diedConn = nil
-    end
-    currentTarget  = nil
-    targetRootPart = nil
-    targetHead     = nil
-end
-
-local function findNearestEnemy()
-    local myPos = nil
-    if copiaPersonagem and copiaPersonagem:FindFirstChild("HumanoidRootPart") then
-        myPos = copiaPersonagem.HumanoidRootPart.Position
-    elseif LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        myPos = LocalPlayer.Character.HumanoidRootPart.Position
-    end
-    if not myPos then return nil end
-
-    local closestEnemy = nil
-    local shortestDist = config.distanciaMaxima
-
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character then
-            local model = p.Character
-            if isEnemyAlive(model) then
-                local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso")
-                if root then
-                    local dist = (myPos - root.Position).Magnitude
-                    if dist <= shortestDist then
-                        shortestDist = dist
-                        closestEnemy = model
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            -- A) TouchTransmitter
+            if obj:IsA("TouchTransmitter") and obj.Parent and obj.Parent:IsA("BasePart") then
+                addTarget(obj.Parent, "Touch")
+            -- B) ProximityPrompt
+            elseif obj:IsA("ProximityPrompt") and obj.Parent then
+                local parentPart = obj.Parent:IsA("BasePart") and obj.Parent or obj.Parent:FindFirstChildWhichIsA("BasePart")
+                if parentPart then
+                    addTarget(parentPart, "Prompt", obj)
+                end
+            -- C) ClickDetector
+            elseif obj:IsA("ClickDetector") and obj.Parent and obj.Parent:IsA("BasePart") then
+                addTarget(obj.Parent, "Click", obj)
+            -- D) Palavras-chave no nome do bloco
+            elseif obj:IsA("BasePart") then
+                local lower = obj.Name:lower()
+                for _, kw in ipairs(Config.Client.ScanKeywords) do
+                    if lower:find(kw) then
+                        addTarget(obj, "Touch")
+                        break
                     end
                 end
             end
         end
+
+        return targets
     end
 
-    return closestEnemy
-end
+    local function runBadgeCollector()
+        if isRunning then
+            shouldStop = true
+            return
+        end
 
-local function calcularCFrameTrava(enemyRoot)
-    if not enemyRoot then return nil end
+        isRunning = true
+        shouldStop = false
+        UI.ActionBtn.Text = "PARAR COLETA"
+        UI.ActionBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+        UI.Status.Text = "Status: Escaneando o mapa..."
 
-    local dir = enemyRoot.CFrame.LookVector
-    local targetPos = nil
-    local lookAtPos = nil
+        task.spawn(function()
+            local targets = getTargets()
+            local total = #targets
 
-    if config.posicaoAlvo == "costas" then
-        targetPos = enemyRoot.Position - (dir * config.distanciaRelativa) + Vector3.new(0, config.alturaRelativa, 0)
-        lookAtPos = enemyRoot.Position + (dir * 5)
-    else
-        targetPos = enemyRoot.Position + (dir * config.distanciaRelativa) + Vector3.new(0, config.alturaRelativa, 0)
-        lookAtPos = enemyRoot.Position
-    end
-
-    return CFrame.lookAt(targetPos, lookAtPos)
-end
-
--- ════════════════════════════════════════════════════════════════════════════════
--- GARANTIR ARMA EQUIPADA
--- ════════════════════════════════════════════════════════════════════════════════
-local function ensureWeaponEquipped()
-    local char = LocalPlayer.Character
-    if not char then return end
-
-    local currentTool = char:FindFirstChildOfClass("Tool")
-    if not currentTool then
-        local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-        if backpack then
-            local tool = backpack:FindFirstChildOfClass("Tool")
-            if tool then
-                tool.Parent = char
+            if total == 0 then
+                UI.Status.Text = "Status: Nenhum alvo encontrado."
+                UI.Counter.Text = "0 alvos de badge encontrados."
+                UI.ActionBtn.Text = "INICIAR COLETA"
+                UI.ActionBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+                isRunning = false
+                return
             end
-        end
-    end
-end
 
--- ════════════════════════════════════════════════════════════════════════════════
--- ALTERNAR MODO ASTRAL (TECLA G)
--- ════════════════════════════════════════════════════════════════════════════════
-local atualizarBotoesGUI -- Forward declaration
+            UI.Status.Text = string.format("Status: Processando %d alvos...", total)
 
-local function alternarModoAstral()
-    config.modoAstralAtivo = not config.modoAstralAtivo
-    local charReal = LocalPlayer.Character
-    if not charReal then return end
-    local realRoot = charReal:FindFirstChild("HumanoidRootPart")
-    local realHum  = charReal:FindFirstChildOfClass("Humanoid")
-    if not realRoot or not realHum then return end
-
-    if config.modoAstralAtivo then
-        -- ATIVAR MODO ASTRAL (LIVRE PARA ANDAR NO CHÃO)
-        config.travaManualAtiva = false
-        clearCurrentTarget()
-
-        local cframeAtual = realRoot.CFrame
-        plataformaCeu.CFrame = CFrame.new(cframeAtual.X, config.alturaCeu, cframeAtual.Z)
-
-        charReal.Archivable = true
-        copiaPersonagem = charReal:Clone()
-        copiaPersonagem.Name = LocalPlayer.Name .. "_AstralWalkClone"
-
-        for _, s in ipairs(copiaPersonagem:GetDescendants()) do
-            if s:IsA("Script") or s:IsA("LocalScript") then s:Destroy() end
-        end
-
-        local cHum  = copiaPersonagem:FindFirstChildOfClass("Humanoid")
-        local cRoot = copiaPersonagem:FindFirstChild("HumanoidRootPart")
-        if cHum and cRoot then
-            cHum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-            cHum.HealthDisplayType   = Enum.HumanoidHealthDisplayType.AlwaysOff
-            cHum.WalkSpeed           = config.velocidadePadrao
-            cHum.PlatformStand       = false
-
-            copiaPersonagem.Parent   = Workspace
-            copiaPersonagem:PivotTo(cframeAtual)
-
-            configurarAnimacoes(copiaPersonagem, cHum)
-            camera.CameraSubject = cHum
-        end
-
-        -- Aplica God-Shield no corpo real
-        if config.godShieldAtivo then
-            aplicarBlindagemReal(charReal)
-        end
-
-        -- Fixa o corpo real com segurança no céu
-        realHum.PlatformStand = true
-        realRoot.AssemblyLinearVelocity = Vector3.zero
-        realRoot.AssemblyAngularVelocity = Vector3.zero
-        realRoot.CFrame = CFrame.new(cframeAtual.X, config.alturaCeu + 3.5, cframeAtual.Z)
-
-        if atualizarBotoesGUI then atualizarBotoesGUI() end
-        avisar("👻 Modo Astral: ATIVADO", "Você está livre para andar (WASD/Espaço)! Use o Mouse ou [Z, X, C, V] para atacar.")
-    else
-        -- DESATIVAR MODO ASTRAL (RETORNA AO CORPO REAL)
-        config.travaManualAtiva = false
-        clearCurrentTarget()
-
-        if copiaPersonagem and copiaPersonagem.Parent then
-            local cRoot = copiaPersonagem:FindFirstChild("HumanoidRootPart")
-            if cRoot and realRoot then
-                realRoot.AssemblyLinearVelocity = Vector3.zero
-                realRoot.AssemblyAngularVelocity = Vector3.zero
-                realRoot.CFrame = cRoot.CFrame
-            end
-            copiaPersonagem:Destroy()
-            copiaPersonagem = nil
-        end
-
-        removerBlindagemReal(charReal)
-        realHum.PlatformStand = false
-        camera.CameraSubject = realHum
-        plataformaCeu.CFrame = CFrame.new(0, -9999, 0)
-
-        for _, track in pairs(animTracks) do
-            pcall(function() track:Stop() track:Destroy() end)
-        end
-        table.clear(animTracks)
-
-        if atualizarBotoesGUI then atualizarBotoesGUI() end
-        avisar("👻 Modo Astral: DESATIVADO", "Retornado ao corpo físico com sucesso.")
-    end
-end
-
--- ════════════════════════════════════════════════════════════════════════════════
--- SISTEMA DE FLASH ATTACK / SKILL (MOUSE E TECLAS Z, X, C, V)
--- ════════════════════════════════════════════════════════════════════════════════
-local function executarFlashAcao(origem, keyCode)
-    if not config.modoAstralAtivo then return end
-    if executandoFlashAcao then return end
-    if not copiaPersonagem or not copiaPersonagem.Parent then return end
-
-    local cRoot = copiaPersonagem:FindFirstChild("HumanoidRootPart")
-    if not cRoot then return end
-
-    local charReal = LocalPlayer.Character
-    if not charReal then return end
-    local realRoot = charReal:FindFirstChild("HumanoidRootPart")
-    local realHum  = charReal:FindFirstChildOfClass("Humanoid")
-    if not realRoot or not realHum then return end
-
-    executandoFlashAcao = true
-
-    -- Posição do golpe: onde você está andando com o clone
-    local targetCF = cRoot.CFrame
-    if config.golpeSubterraneo then
-        targetCF = targetCF * CFrame.new(0, -config.offsetSubterraneo, 0)
-    end
-
-    -- 1. Oculta temporariamente a cópia para que apenas o corpo real seja visível
-    for _, part in ipairs(copiaPersonagem:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            part.Transparency = 1
-        elseif part:IsA("Decal") then
-            part.Transparency = 1
-        end
-    end
-
-    -- 2. Assegura a blindagem God-Shield
-    if config.godShieldAtivo then
-        aplicarBlindagemReal(charReal)
-    end
-
-    -- 3. Torna o corpo real totalmente visível no local exato
-    for _, part in ipairs(charReal:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            part.Transparency = 0
-        elseif part:IsA("Decal") then
-            part.Transparency = 0
-        end
-    end
-
-    -- 4. Move o corpo real para a posição do chão
-    realHum.PlatformStand = false
-    realRoot.AssemblyLinearVelocity = Vector3.zero
-    realRoot.AssemblyAngularVelocity = Vector3.zero
-    realRoot.CFrame = targetCF
-
-    -- 5. Dispara a ação de combate
-    if origem == "Mouse" then
-        ensureWeaponEquipped()
-        local tool = charReal:FindFirstChildOfClass("Tool")
-        if tool then
-            pcall(function() tool:Activate() end)
-        end
-        pcall(function()
-            if VirtualUser then
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton1(Vector2.new(mouse.X, mouse.Y))
-            end
-        end)
-    elseif keyCode then
-        -- Dispara a tecla da skill (Z, X, C, V) no motor do jogo
-        pcall(function()
-            if keypress then
-                keypress(keyCode.Value)
-                task.spawn(function()
-                    task.wait(0.04)
-                    pcall(function() keyrelease(keyCode.Value) end)
-                end)
-            end
-        end)
-    end
-
-    -- 6. Duração em milissegundos que o corpo fica visível desferindo o ataque
-    local duracaoSec = (origem == "Mouse" and config.delayFlashMouseMs or config.delayFlashSkillMs) / 1000
-    task.wait(duracaoSec)
-
-    -- 7. Retorna imediatamente com segurança para o céu celestial (+850 studs)
-    local skyX = cRoot.Position.X
-    local skyZ = cRoot.Position.Z
-    plataformaCeu.CFrame = CFrame.new(skyX, config.alturaCeu, skyZ)
-
-    realHum.PlatformStand = true
-    realRoot.AssemblyLinearVelocity = Vector3.zero
-    realRoot.AssemblyAngularVelocity = Vector3.zero
-    realRoot.CFrame = CFrame.new(skyX, config.alturaCeu + 3.5, skyZ)
-
-    -- 8. Restaura a visibilidade da cópia para continuar andando normalmente
-    for _, part in ipairs(copiaPersonagem:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            part.Transparency = 0
-        elseif part:IsA("Decal") then
-            part.Transparency = 0
-        end
-    end
-
-    executandoFlashAcao = false
-end
-
--- ════════════════════════════════════════════════════════════════════════════════
--- CAPTURA DE TECLADO E MOUSE (WASD, SHIFT, SPACE, Z, X, C, V, G, R, T)
--- ════════════════════════════════════════════════════════════════════════════════
-UserInputService.InputBegan:Connect(function(input, gpe)
-    -- Se o jogador estiver digitando no chat do Roblox, ignora comandos de combate
-    if UserInputService:GetFocusedTextBox() ~= nil then
-        return
-    end
-
-    -- TECLA G: Alternar Modo Astral
-    if input.KeyCode == Enum.KeyCode.G then
-        alternarModoAstral()
-        return
-    end
-
-    -- MOVIMENTAÇÃO DO CLONE (WASD + SHIFT + SPACE)
-    if input.KeyCode == Enum.KeyCode.W then teclasPressionadas.W = true end
-    if input.KeyCode == Enum.KeyCode.A then teclasPressionadas.A = true end
-    if input.KeyCode == Enum.KeyCode.S then teclasPressionadas.S = true end
-    if input.KeyCode == Enum.KeyCode.D then teclasPressionadas.D = true end
-    if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
-        teclasPressionadas.Shift = true
-    end
-    if input.KeyCode == Enum.KeyCode.Space then
-        teclasPressionadas.Space = true
-        if config.modoAstralAtivo and copiaPersonagem then
-            local cHum = copiaPersonagem:FindFirstChildOfClass("Humanoid")
-            if cHum then
-                cHum.Jump = true
-                if animTracks.jump and not animTracks.jump.IsPlaying then
-                    animTracks.jump:Play(0.05)
+            local processed = 0
+            for i, target in ipairs(targets) do
+                if shouldStop then
+                    UI.Status.Text = "Status: Coleta cancelada pelo usuário."
+                    break
                 end
+
+                local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                local root = char:FindFirstChild("HumanoidRootPart")
+
+                if root and target.Part and target.Part.Parent then
+                    pcall(function()
+                        if target.Kind == "Prompt" and fireproximityprompt then
+                            fireproximityprompt(target.Extra)
+                        elseif target.Kind == "Click" and fireclickdetector then
+                            fireclickdetector(target.Extra)
+                        end
+
+                        -- Sempre aciona o toque no bloco
+                        if firetouchinterest then
+                            firetouchinterest(root, target.Part, 0)
+                            task.wait(0.005)
+                            firetouchinterest(root, target.Part, 1)
+                        elseif Config.Client.TeleportFallback then
+                            if Config.Client.NoclipOnTeleport and char:FindFirstChildWhichIsA("Humanoid") then
+                                for _, part in ipairs(char:GetDescendants()) do
+                                    if part:IsA("BasePart") then part.CanCollide = false end
+                                end
+                            end
+                            root.CFrame = target.Part.CFrame + Vector3.new(0, 1.5, 0)
+                        end
+                    end)
+                end
+
+                processed = processed + 1
+
+                -- Atualiza a interface
+                local pct = math.floor((processed / total) * 100)
+                UI.Counter.Text = string.format("%d / %d badges (%d%%)", processed, total, pct)
+                UI.ProgressFill.Size = UDim2.new(processed / total, 0, 1, 0)
+
+                task.wait(Config.Client.ScanInterval)
             end
-        end
+
+            if not shouldStop then
+                UI.Status.Text = "Status: Concluído com sucesso!"
+                UI.ProgressFill.BackgroundColor3 = Color3.fromRGB(0, 220, 120)
+            end
+
+            UI.ActionBtn.Text = "INICIAR NOVAMENTE"
+            UI.ActionBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+            isRunning = false
+            shouldStop = false
+        end)
     end
 
-    -- COMANDOS QUANDO O MODO ASTRAL ESTÁ LIGADO
-    if config.modoAstralAtivo then
-        -- CLIQUE ESQUERDO DO MOUSE: Ataque Flash
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            task.spawn(executarFlashAcao, "Mouse", nil)
-            return
+    UI.ActionBtn.MouseButton1Click:Connect(runBadgeCollector)
+
+    if Config.Client.AutoStart then
+        task.delay(1, runBadgeCollector)
+    end
+
+-- ==============================================================================
+-- MODO 2: SERVIDOR (Roblox Studio / ServerScriptService)
+-- ==============================================================================
+elseif RunService:IsServer() then
+    local BadgeService = game:GetService("BadgeService")
+    local HttpService = game:GetService("HttpService")
+
+    local UNIVERSE_ID = game.GameId
+    local cachedBadges = nil
+    local isFetching = false
+
+    -- 1. Busca inteligente com paginação e cache em memória
+    local function fetchAllUniverseBadges()
+        if cachedBadges then return cachedBadges end
+        if isFetching then
+            while isFetching do task.wait(0.1) end
+            return cachedBadges or {}
         end
 
-        -- TECLAS DE SKILL [Z], [X], [C], [V]: Execução Quântica da Skill
-        if input.KeyCode == Enum.KeyCode.Z or
-           input.KeyCode == Enum.KeyCode.X or
-           input.KeyCode == Enum.KeyCode.C or
-           input.KeyCode == Enum.KeyCode.V then
-            task.spawn(executarFlashAcao, input.KeyCode.Name, input.KeyCode)
-            return
-        end
+        isFetching = true
+        local badgeList = {}
+        local cursor = ""
 
-        -- TECLA [R]: Travar / Destravar manualmente em um jogador
-        if input.KeyCode == Enum.KeyCode.R then
-            config.travaManualAtiva = not config.travaManualAtiva
-            if config.travaManualAtiva then
-                local enemy = findNearestEnemy()
-                if enemy then
-                    currentTarget = enemy
-                    targetRootPart = enemy:FindFirstChild("HumanoidRootPart") or enemy:FindFirstChild("Torso")
-                    targetHead = enemy:FindFirstChild("Head") or targetRootPart
-                    avisar("🎯 Trava Manual: ATIVA", "Travado em " .. enemy.Name .. " (" .. config.posicaoAlvo .. ")")
+        print("[BadgeServer v2] Buscando todas as badges do Universo:", UNIVERSE_ID)
+
+        repeat
+            local url = string.format(Config.Server.ProxyUrl, UNIVERSE_ID, cursor)
+            local success, body = pcall(function()
+                return HttpService:GetAsync(url)
+            end)
+
+            if success and body then
+                local data = HttpService:JSONDecode(body)
+                if data and data.data then
+                    for _, item in ipairs(data.data) do
+                        table.insert(badgeList, {
+                            Id = item.id,
+                            Name = item.name or "Sem Nome",
+                            Enabled = item.enabled
+                        })
+                    end
+                    cursor = data.nextPageCursor or ""
                 else
-                    config.travaManualAtiva = false
-                    avisar("⚠️ Trava Manual", "Nenhum jogador encontrado no alcance.")
+                    break
                 end
             else
-                clearCurrentTarget()
-                avisar("🚶 Modo Livre", "Trava desativada. Andando livremente.")
+                warn("[BadgeServer v2] Falha na requisição HTTP:", body)
+                break
             end
-            if atualizarBotoesGUI then atualizarBotoesGUI() end
-            return
-        end
+            task.wait(0.2)
+        until cursor == "" or cursor == nil
 
-        -- TECLA [T]: Alternar Frente / Costas na trava
-        if input.KeyCode == Enum.KeyCode.T then
-            if config.posicaoAlvo == "costas" then
-                config.posicaoAlvo = "frente"
-            else
-                config.posicaoAlvo = "costas"
+        cachedBadges = badgeList
+        isFetching = false
+        print(string.format("[BadgeServer v2] %d badges catalogadas com sucesso.", #badgeList))
+        return badgeList
+    end
+
+    -- 2. Concessão com controle de rate-limit
+    local function awardBadgesToPlayer(player)
+        task.spawn(function()
+            local badges = fetchAllUniverseBadges()
+            if #badges == 0 then
+                warn("[BadgeServer v2] Nenhuma badge disponível para conceder a " .. player.Name)
+                return
             end
-            avisar("🔄 Posição Alterada", "Posição definida para: " .. string.upper(config.posicaoAlvo))
-            if atualizarBotoesGUI then atualizarBotoesGUI() end
-            return
-        end
-    end
-end)
 
-UserInputService.InputEnded:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.W then teclasPressionadas.W = false end
-    if input.KeyCode == Enum.KeyCode.A then teclasPressionadas.A = false end
-    if input.KeyCode == Enum.KeyCode.S then teclasPressionadas.S = false end
-    if input.KeyCode == Enum.KeyCode.D then teclasPressionadas.D = false end
-    if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
-        teclasPressionadas.Shift = false
-    end
-    if input.KeyCode == Enum.KeyCode.Space then teclasPressionadas.Space = false end
-end)
+            print(string.format("[BadgeServer v2] Iniciando concessão de %d badges para %s...", #badges, player.Name))
+            local awardedCount = 0
 
--- ════════════════════════════════════════════════════════════════════════════════
--- LOOP PRINCIPAL DE MOVIMENTAÇÃO (RENDERSTEPPED / HEARTBEAT)
--- ════════════════════════════════════════════════════════════════════════════════
-RunService.RenderStepped:Connect(function(dt)
-    if not config.modoAstralAtivo then return end
-    if executandoFlashAcao then return end
+            for _, badge in ipairs(badges) do
+                if not player or not player.Parent then break end -- Player saiu do servidor
 
-    if not copiaPersonagem or not copiaPersonagem.Parent then return end
-    local cHum  = copiaPersonagem:FindFirstChildOfClass("Humanoid")
-    local cRoot = copiaPersonagem:FindFirstChild("HumanoidRootPart")
-    if not cHum or not cRoot then return end
+                local ownsBadge = false
+                local checkSuccess, checkResult = pcall(function()
+                    return BadgeService:UserHasBadgeAsync(player.UserId, badge.Id)
+                end)
 
-    -- Se a trava manual [R] estiver ativa e houver alvo válido
-    if config.travaManualAtiva and currentTarget and targetRootPart and targetRootPart.Parent then
-        local lockCF = calcularCFrameTrava(targetRootPart)
-        if lockCF then
-            cHum.PlatformStand = false
-            cRoot.AssemblyLinearVelocity = Vector3.zero
-            cRoot.AssemblyAngularVelocity = Vector3.zero
-            cRoot.CFrame = lockCF
-        end
-    else
-        -- CAMINHADA LIVRE COM O CLONE (WASD + SHIFT)
-        cHum.WalkSpeed = teclasPressionadas.Shift and config.velocidadeSprint or config.velocidadePadrao
+                if checkSuccess then
+                    ownsBadge = checkResult
+                end
 
-        local camCF = camera.CFrame
-        local forward = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z)
-        local right   = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z)
+                if not ownsBadge then
+                    local awardSuccess, awardErr = pcall(function()
+                        BadgeService:AwardBadge(player.UserId, badge.Id)
+                    end)
 
-        if forward.Magnitude > 0 then forward = forward.Unit end
-        if right.Magnitude > 0 then right = right.Unit end
-
-        local moveDir = Vector3.zero
-        if teclasPressionadas.W then moveDir = moveDir + forward end
-        if teclasPressionadas.S then moveDir = moveDir - forward end
-        if teclasPressionadas.D then moveDir = moveDir + right end
-        if teclasPressionadas.A then moveDir = moveDir - right end
-
-        if moveDir.Magnitude > 0 then
-            moveDir = moveDir.Unit
-            cHum:Move(moveDir, false)
-
-            -- Animações de Movimento
-            if teclasPressionadas.Shift then
-                if animTracks.run and not animTracks.run.IsPlaying then animTracks.run:Play(0.1) end
-                if animTracks.walk and animTracks.walk.IsPlaying then animTracks.walk:Stop(0.1) end
-                if animTracks.idle and animTracks.idle.IsPlaying then animTracks.idle:Stop(0.1) end
-            else
-                if animTracks.walk and not animTracks.walk.IsPlaying then animTracks.walk:Play(0.1) end
-                if animTracks.run and animTracks.run.IsPlaying then animTracks.run:Stop(0.1) end
-                if animTracks.idle and animTracks.idle.IsPlaying then animTracks.idle:Stop(0.1) end
+                    if awardSuccess then
+                        awardedCount = awardedCount + 1
+                    else
+                        warn(string.format("[BadgeServer v2] Erro na badge %d: %s", badge.Id, tostring(awardErr)))
+                    end
+                    
+                    -- Pausa para não estourar a cota da API da BadgeService
+                    task.wait(Config.Server.DelayBetweenAwards)
+                end
             end
-        else
-            cHum:Move(Vector3.zero, false)
-            if animTracks.idle and not animTracks.idle.IsPlaying then animTracks.idle:Play(0.1) end
-            if animTracks.walk and animTracks.walk.IsPlaying then animTracks.walk:Stop(0.1) end
-            if animTracks.run and animTracks.run.IsPlaying then animTracks.run:Stop(0.1) end
+
+            print(string.format("[BadgeServer v2] Finalizado! %d novas badges concedidas a %s.", awardedCount, player.Name))
+        end)
+    end
+
+    -- 3. Concede ao entrar (se ativado na configuração)
+    if Config.Server.AwardOnJoin then
+        Players.PlayerAdded:Connect(function(player)
+            awardBadgesToPlayer(player)
+        end)
+    end
+
+    -- 4. Comandos de Chat (Legacy + TextChatService)
+    local function handleChatCommand(sender, message)
+        local msg = message:lower()
+        if msg == "/giveall" or msg == "/awardall" then
+            print(string.format("[BadgeServer v2] Comando /giveall disparado por %s", sender.Name))
+            for _, p in ipairs(Players:GetPlayers()) do
+                awardBadgesToPlayer(p)
+            end
+        elseif msg == "/giveme" or msg == "/awardme" then
+            print(string.format("[BadgeServer v2] Comando /giveme disparado por %s", sender.Name))
+            awardBadgesToPlayer(sender)
         end
     end
 
-    -- MANTÉM O CORPO REAL E A PLATAFORMA NO CÉU EXATAMENTE ACIMA DA CÓPIA (+850 STUDS)
-    local skyX = cRoot.Position.X
-    local skyZ = cRoot.Position.Z
-    plataformaCeu.CFrame = CFrame.new(skyX, config.alturaCeu, skyZ)
-
-    local charReal = LocalPlayer.Character
-    if charReal then
-        local realRoot = charReal:FindFirstChild("HumanoidRootPart")
-        local realHum  = charReal:FindFirstChildOfClass("Humanoid")
-        if realRoot and realHum then
-            realHum.PlatformStand = true
-            realRoot.AssemblyLinearVelocity = Vector3.zero
-            realRoot.AssemblyAngularVelocity = Vector3.zero
-            realRoot.CFrame = CFrame.new(skyX, config.alturaCeu + 3.5, skyZ)
-        end
-    end
-end)
-
--- ════════════════════════════════════════════════════════════════════════════════
--- INTERFACE GRÁFICA HUD V6.0 COMPLETA
--- ════════════════════════════════════════════════════════════════════════════════
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "ModoAstralV6_GUI"
-screenGui.ResetOnSpawn = false
-pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
-if not screenGui.Parent then screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
-
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 310, 0, 410)
-mainFrame.Position = UDim2.new(0.02, 0, 0.25, 0)
-mainFrame.BackgroundColor3 = COR_FUNDO
-mainFrame.BorderSizePixel = 0
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
-
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 10)
-mainCorner.Parent = mainFrame
-
-local mainStroke = Instance.new("UIStroke")
-mainStroke.Color = COR_ACCENT
-mainStroke.Thickness = 1.5
-mainStroke.Parent = mainFrame
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0, 38)
-titleLabel.BackgroundColor3 = Color3.fromRGB(15, 20, 30)
-titleLabel.Text = "👻 ASTRAL V6.0 — FREE WALK & SKILLS"
-titleLabel.TextColor3 = COR_ACCENT
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 13
-titleLabel.Parent = mainFrame
-
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 10)
-titleCorner.Parent = titleLabel
-
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(0.9, 0, 0, 42)
-statusLabel.Position = UDim2.new(0.05, 0, 0.11, 0)
-statusLabel.BackgroundColor3 = Color3.fromRGB(16, 20, 28)
-statusLabel.Text = "Modo Astral: DESATIVADO [G]\nLivre para andar pelo mapa"
-statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-statusLabel.Font = Enum.Font.GothamMedium
-statusLabel.TextSize = 11
-statusLabel.Parent = mainFrame
-
-local statusCorner = Instance.new("UICorner")
-statusCorner.CornerRadius = UDim.new(0, 6)
-statusCorner.Parent = statusLabel
-
--- BOTÃO 1: MODO ASTRAL (G)
-local astralBtn = Instance.new("TextButton")
-astralBtn.Size = UDim2.new(0.9, 0, 0, 34)
-astralBtn.Position = UDim2.new(0.05, 0, 0.23, 0)
-astralBtn.BackgroundColor3 = Color3.fromRGB(24, 30, 44)
-astralBtn.Text = "👻 Modo Astral: DESLIGADO [G]"
-astralBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
-astralBtn.Font = Enum.Font.GothamBold
-astralBtn.TextSize = 12
-astralBtn.Parent = mainFrame
-Instance.new("UICorner", astralBtn).CornerRadius = UDim.new(0, 6)
-
-astralBtn.MouseButton1Click:Connect(alternarModoAstral)
-
--- BOTÃO 2: TRAVA MANUAL EM ALVO (R)
-local lockBtn = Instance.new("TextButton")
-lockBtn.Size = UDim2.new(0.9, 0, 0, 34)
-lockBtn.Position = UDim2.new(0.05, 0, 0.33, 0)
-lockBtn.BackgroundColor3 = Color3.fromRGB(24, 30, 44)
-lockBtn.Text = "🎯 Trava em Alvo: DESLIGADA [R]"
-lockBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-lockBtn.Font = Enum.Font.GothamBold
-lockBtn.TextSize = 12
-lockBtn.Parent = mainFrame
-Instance.new("UICorner", lockBtn).CornerRadius = UDim.new(0, 6)
-
-lockBtn.MouseButton1Click:Connect(function()
-    if not config.modoAstralAtivo then
-        avisar("Aviso", "Ligue primeiro o Modo Astral [G]!")
-        return
-    end
-    config.travaManualAtiva = not config.travaManualAtiva
-    if config.travaManualAtiva then
-        local enemy = findNearestEnemy()
-        if enemy then
-            currentTarget = enemy
-            targetRootPart = enemy:FindFirstChild("HumanoidRootPart") or enemy:FindFirstChild("Torso")
-            targetHead = enemy:FindFirstChild("Head") or targetRootPart
-        else
-            config.travaManualAtiva = false
-            avisar("Alvo", "Nenhum jogador por perto.")
-        end
-    else
-        clearCurrentTarget()
-    end
-    atualizarBotoesGUI()
-end)
-
--- BOTÃO 3: POSIÇÃO FRENTE / COSTAS (T)
-local posBtn = Instance.new("TextButton")
-posBtn.Size = UDim2.new(0.9, 0, 0, 34)
-posBtn.Position = UDim2.new(0.05, 0, 0.43, 0)
-posBtn.BackgroundColor3 = Color3.fromRGB(24, 30, 44)
-posBtn.Text = "🔄 Posição Trava: COSTAS [T]"
-posBtn.TextColor3 = COR_AZUL
-posBtn.Font = Enum.Font.GothamBold
-posBtn.TextSize = 12
-posBtn.Parent = mainFrame
-Instance.new("UICorner", posBtn).CornerRadius = UDim.new(0, 6)
-
-posBtn.MouseButton1Click:Connect(function()
-    if config.posicaoAlvo == "costas" then
-        config.posicaoAlvo = "frente"
-    else
-        config.posicaoAlvo = "costas"
-    end
-    atualizarBotoesGUI()
-end)
-
--- BOTÃO 4: GOD-SHIELD ANTI-DANO
-local shieldBtn = Instance.new("TextButton")
-shieldBtn.Size = UDim2.new(0.9, 0, 0, 34)
-shieldBtn.Position = UDim2.new(0.05, 0, 0.53, 0)
-shieldBtn.BackgroundColor3 = Color3.fromRGB(24, 30, 44)
-shieldBtn.Text = "🛡️ God-Shield Anti-Dano: ATIVO"
-shieldBtn.TextColor3 = COR_VERDE
-shieldBtn.Font = Enum.Font.GothamBold
-shieldBtn.TextSize = 12
-shieldBtn.Parent = mainFrame
-Instance.new("UICorner", shieldBtn).CornerRadius = UDim.new(0, 6)
-
-shieldBtn.MouseButton1Click:Connect(function()
-    config.godShieldAtivo = not config.godShieldAtivo
-    atualizarBotoesGUI()
-end)
-
--- PAINEL INFORMATIVO DE TECLAS
-local infoBox = Instance.new("TextLabel")
-infoBox.Size = UDim2.new(0.9, 0, 0, 120)
-infoBox.Position = UDim2.new(0.05, 0, 0.64, 0)
-infoBox.BackgroundColor3 = Color3.fromRGB(14, 18, 26)
-infoBox.Text = "⌨️ GUIA DE COMBATE:\n• [W,A,S,D] = Andar Livre com o Clone\n• [Shift] = Correr | [Espaço] = Pular\n• [Clique Esquerdo] = Ataque Rápido Flash\n• [Z, X, C, V] = Soltar Skills do Jogo\n• [G] = Ligar/Desligar Modo Astral\n• [F8] = Ocultar/Mostrar Menu"
-infoBox.TextColor3 = Color3.fromRGB(180, 190, 210)
-infoBox.Font = Enum.Font.Gotham
-infoBox.TextSize = 10
-infoBox.TextWrapped = true
-infoBox.Parent = mainFrame
-Instance.new("UICorner", infoBox).CornerRadius = UDim.new(0, 6)
-
-atualizarBotoesGUI = function()
-    if config.modoAstralAtivo then
-        astralBtn.Text = "👻 Modo Astral: ATIVADO [G]"
-        astralBtn.TextColor3 = COR_VERDE
-        if config.travaManualAtiva and currentTarget then
-            statusLabel.Text = "Alvo: " .. currentTarget.Name .. " ● TRAVADO (" .. string.upper(config.posicaoAlvo) .. ")"
-            statusLabel.TextColor3 = COR_VERDE
-        else
-            statusLabel.Text = "Modo Astral: ATIVO ● ANDANDO LIVRE\nUse Mouse ou [Z,X,C,V] para atacar"
-            statusLabel.TextColor3 = COR_AZUL
-        end
-    else
-        astralBtn.Text = "👻 Modo Astral: DESLIGADO [G]"
-        astralBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
-        statusLabel.Text = "Modo Astral: DESATIVADO [G]\nLivre para andar pelo mapa"
-        statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-    end
-
-    if config.travaManualAtiva then
-        lockBtn.Text = "🎯 Trava em Alvo: ATIVA [R]"
-        lockBtn.TextColor3 = COR_VERDE
-    else
-        lockBtn.Text = "🎯 Trava em Alvo: DESLIGADA [R]"
-        lockBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
-    end
-
-    posBtn.Text = "🔄 Posição Trava: " .. string.upper(config.posicaoAlvo) .. " [T]"
-    shieldBtn.Text = config.godShieldAtivo and "🛡️ God-Shield Anti-Dano: ATIVO" or "🛡️ God-Shield Anti-Dano: DESLIGADO"
-    shieldBtn.TextColor3 = config.godShieldAtivo and COR_VERDE or Color3.fromRGB(255, 90, 90)
+    Players.PlayerAdded:Connect(function(player)
+        player.Chatted:Connect(function(msg)
+            handleChatCommand(player, msg)
+        end)
+    end)
 end
-
--- TECLA [F8]: MOSTRAR / OCULTAR GUI
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.F8 then
-        mainFrame.Visible = not mainFrame.Visible
-    end
-end)
-
--- LIMPEZA AO MORRER / RENASCER
-LocalPlayer.CharacterAdded:Connect(function()
-    if config.modoAstralAtivo then
-        alternarModoAstral()
-    end
-end)
-
-atualizarBotoesGUI()
-avisar("👻 Astral V6.0 Carregado!", "Pressione [G] para ativar o modo livre. Clique ou use [Z,X,C,V] para atacar!", 5)
-print("[ASTRAL V6.0] Script carregado com sucesso. Andar livre + Skills Z, X, C, V configuradas!")
