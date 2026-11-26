@@ -1,34 +1,35 @@
 --[[
     =================================================================================
-    👑 BADGE MASTER V11 - THE APEX NETWORK BYPASS & REMOTE OVERHAUL
+    👑 BADGE MASTER V12 - THE APEX TESTING LAB & CYBER OMNI-SUITE
     =================================================================================
-    POR QUE OS REMOTES NÃO ESTAVAM FUNCIONANDO E O QUE A V11 CORRIGE:
+    O QUE HÁ DE NOVO NA V12:
     
-    1. [O PROBLEMA DOS ARGUMENTOS RÍGIDOS]:
-       Muitos remotes no Roblox ignoram chamadas se os argumentos forem apenas 'true'
-       ou '1000'. A V11 agora possui o SISTEMA DE 8 PRESETS DE INJEÇÃO:
-       - Preset 0: Vazio () -> Muito comum em remotes de vitória/claim sem parâmetros.
-       - Preset 1: Referência Física (RootPart, Character) -> Remotes de toque/área.
-       - Preset 2: Ação + Badge ("Award", ID), ("Claim", ID), (ID puro).
-       - Preset 3: Palavras-Chave de Conclusão ("Win", "Complete", "ClaimAll", "Finish").
-       - Preset 4: Valores Numéricos Altos (1, 100, 1000, 999999).
-       - Preset 5: Booleans Duplos (true, true), (true).
-       - Preset 6: Dicionários {Action = "Claim", Status = "Completed", Success = true}.
-       - Preset 7: Arrays Envelopados {"Win"}, {"Claim", true}.
+    1. [CORREÇÃO TOTAL DOS ITENS]:
+       Os itens voltaram muito mais fortes! A V12 não busca apenas 'Tools' puras,
+       mas varre:
+       - Tools no Workspace (filtrando rigorosamente outros players)
+       - Tools em ReplicatedStorage e Lighting
+       - Modelos e partes colecionáveis com 'Handle', 'Item', 'Coin', 'Relic', etc.
+       - Ferramentas já na sua mochila
        
-    2. [DETECTOR DE MÓDULOS DE REDE (NETWORK CLIENT BYPASS)]:
-       Procura e inspeciona ModuleScripts de rede do jogo (Network, Net, Knit, Bridge)
-       e invoca as funções legítimas do cliente, contornando travas de hash e tokens.
+    2. [🧪 LABORATÓRIO DE REMOTES EM MASSA]:
+       Agora você pode testar TODOS os remotes do jogo de uma só vez:
+       - Com o ARGUMENTO QUE VOCÊ QUISER (campo customizado livre)
+       - Com presets prontos: Vazio (), true, 1000, Badges da Roblox, "Win", "Claim"
+       - Com controle de delay entre disparos (evita kick por spam)
        
-    3. [CAMPO DE ARGUMENTO CUSTOMIZADO (INJEÇÃO LIVRE)]:
-       Você pode digitar o argumento EXATO que quiser para qualquer remote!
+    3. [👁️ ESP DE ITENS & PADS (VISÃO ATRAVÉS DAS PAREDES)]:
+       Cria caixas brilhantes (Highlights) em volta de todos os itens, blocos e
+       prompts do mapa para você enxergá-los mesmo estando do outro lado do mundo!
        
-    4. [PROXIMITYPROMPT COM ALINHAMENTO DE CÂMERA (CAMERA ANGLE BYPASS)]:
-       Anti-cheats modernos checam se sua câmera está olhando para o prompt.
-       A V11 posiciona a câmera diretamente na direção do objeto ao interagir.
-       
-    5. [TOUCHPADS COM SIMULAÇÃO DE ATERRISSAGEM (LANDING PHYSICS)]:
-       Muda o estado do Humanoid para Landed/Running ao pisar para validar colisão.
+    4. [INTERFACE CYBER ULTRA ESTILIZADA]:
+       Sistema de Abas de Alta Performance:
+       - 🏠 Central (Controle Geral & Atalhos)
+       - 🧪 Lab de Remotes (Testador Universal com Parâmetros)
+       - 📋 Lista Completa (Disparo Individual e Auto-Loop por Item)
+       - 👁️ Visual / ESP (Destaque em 3D de todos os alvos)
+       - 🛰️ Remote Spy (Espião de Rede com Replicação Instantânea)
+       - 🛠️ Utilitários (Noclip, SpeedBoost, FPS Boost, Rejoin)
     =================================================================================
 ]]
 
@@ -45,7 +46,7 @@ local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local RootPart = Character:WaitForChild("HumanoidRootPart", 10)
 local Humanoid = Character:WaitForChild("Humanoid", 10)
 
--- Estado Global V11
+-- Estado Global V12
 local State = {
     IsBatchRunning = false,
     ActiveLoops = {},
@@ -53,7 +54,11 @@ local State = {
     ActiveCategory = "Todos",
     UniverseBadgeIds = {},
     SpyLogs = {},
-    CustomArgString = ""
+    CustomArg = "",
+    RemoteDelay = 0.015,
+    EspEnabled = false,
+    EspHighlights = {},
+    NoclipEnabled = true
 }
 
 -- Anti-AFK
@@ -70,8 +75,17 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     Backpack = LocalPlayer:WaitForChild("Backpack")
 end)
 
+-- Noclip Leve
+RunService.Stepped:Connect(function()
+    if State.NoclipEnabled and Character then
+        for _, p in ipairs(Character:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
+    end
+end)
+
 -- ---------------------------------------------------------------------------------
--- 0. FILTRO DE OUTROS JOGADORES (SEGURANÇA CONTRA FANTASMAS)
+-- 0. FILTRO DE OUTROS PLAYERS (SEGURANÇA TOTAL)
 -- ---------------------------------------------------------------------------------
 local function isFromOtherPlayer(obj)
     for _, plr in ipairs(Players:GetPlayers()) do
@@ -86,7 +100,7 @@ local function isFromOtherPlayer(obj)
 end
 
 -- ---------------------------------------------------------------------------------
--- 1. CONSULTA DE BADGES DO UNIVERSO VIA API
+-- 1. CONSULTA DE BADGES VIA API
 -- ---------------------------------------------------------------------------------
 task.spawn(function()
     local uId = game.GameId
@@ -112,279 +126,57 @@ task.spawn(function()
 end)
 
 -- ---------------------------------------------------------------------------------
--- 2. MOTOR DE PRESETS DE ARGUMENTOS DA V11
+-- 2. ESP DE ITENS E PADS (DESTAQUE VISUAL EM 3D ATRAVÉS DAS PAREDES)
 -- ---------------------------------------------------------------------------------
-local function buildPresetBatches(remoteName, customArg)
-    local batches = {}
-    local n = remoteName:lower()
+local function toggleEsp(enabled)
+    State.EspEnabled = enabled
 
-    -- SE O USUÁRIO DIGITOU UM ARGUMENTO CUSTOMIZADO
-    if customArg and customArg ~= "" then
-        local customPayload = nil
+    -- Limpa destaques antigos
+    for _, h in ipairs(State.EspHighlights) do
+        if h and h.Parent then h:Destroy() end
+    end
+    State.EspHighlights = {}
+
+    if not enabled then return end
+
+    for _, entry in ipairs(State.ScannedEntries) do
         pcall(function()
-            -- Tenta decodificar se for JSON/Tabela
-            if customArg:sub(1,1) == "{" or customArg:sub(1,1) == "[" then
-                customPayload = HttpService:JSONDecode(customArg)
+            local target = entry.Object
+            if target and target.Parent then
+                local highlight = Instance.new("Highlight")
+                highlight.Name = "MasterESP_" .. entry.Id
+                highlight.FillTransparency = 0.5
+                highlight.OutlineTransparency = 0
+
+                if entry.Category == "Itens" then
+                    highlight.FillColor = Color3.fromRGB(255, 180, 0)
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                elseif entry.Category == "Pads" then
+                    highlight.FillColor = Color3.fromRGB(0, 200, 255)
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                elseif entry.Category == "Prompts" then
+                    highlight.FillColor = Color3.fromRGB(0, 255, 120)
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                else
+                    highlight.FillColor = Color3.fromRGB(180, 0, 255)
+                end
+
+                highlight.Adornee = target:IsA("Model") and target or (target:IsA("BasePart") and target or target.Parent)
+                highlight.Parent = target
+                table.insert(State.EspHighlights, highlight)
             end
         end)
-        if customPayload ~= nil then
-            table.insert(batches, {customPayload})
-        else
-            -- Converte números e booleans ou envia string pura
-            local num = tonumber(customArg)
-            if num then
-                table.insert(batches, {num})
-            elseif customArg:lower() == "true" then
-                table.insert(batches, {true})
-            elseif customArg:lower() == "false" then
-                table.insert(batches, {false})
-            else
-                table.insert(batches, {customArg})
-            end
-        end
     end
-
-    -- PRESET 0: Vazio () -> Muito comum em botões que só esperam o gatilho
-    table.insert(batches, {})
-
-    -- PRESET 1: Referência Física do Personagem
-    if RootPart and Character then
-        table.insert(batches, {RootPart})
-        table.insert(batches, {Character})
-        table.insert(batches, {RootPart.Position})
-        table.insert(batches, {RootPart.CFrame})
-    end
-
-    -- PRESET 2: Ação + Badges Conhecidas
-    for _, bId in ipairs(State.UniverseBadgeIds) do
-        table.insert(batches, {bId})
-        table.insert(batches, {tostring(bId)})
-        table.insert(batches, {"Award", bId})
-        table.insert(batches, {"Claim", bId})
-        table.insert(batches, {"Badge", bId})
-        table.insert(batches, {{BadgeId = bId}})
-        table.insert(batches, {{Id = bId}})
-    end
-
-    -- PRESET 3: Palavras-Chave de Conclusão / Vitória
-    table.insert(batches, {"Win"})
-    table.insert(batches, {"Complete"})
-    table.insert(batches, {"Claim"})
-    table.insert(batches, {"ClaimAll"})
-    table.insert(batches, {"Finish"})
-    table.insert(batches, {"Reward"})
-    table.insert(batches, {"Success"})
-
-    -- PRESET 4: Numéricos
-    table.insert(batches, {1})
-    table.insert(batches, {100})
-    table.insert(batches, {1000})
-    table.insert(batches, {999999})
-    table.insert(batches, {1000, 1000})
-
-    -- PRESET 5: Booleans
-    table.insert(batches, {true})
-    table.insert(batches, {true, true})
-    table.insert(batches, {true, 1000})
-
-    -- PRESET 6: Dicionários Estruturados
-    table.insert(batches, {{Action = "Claim", Status = "Completed"}})
-    table.insert(batches, {{Success = true, Completed = true}})
-    table.insert(batches, {{Win = true, Score = 1000}})
-
-    -- PRESET 7: Arrays
-    table.insert(batches, {{"Win"}})
-    table.insert(batches, {{"Claim", true}})
-
-    return batches
 end
 
 -- ---------------------------------------------------------------------------------
--- 3. EXECUTOR DE AÇÕES COM OS NOVOS SISTEMAS
+-- 3. SCANNER TOTAL DE ELEMENTOS (CORRIGIDO E AMPLIADO)
 -- ---------------------------------------------------------------------------------
-local function executeAction(entry, customArg)
-    if not Character or not RootPart or not Humanoid then
-        Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-        RootPart = Character:WaitForChild("HumanoidRootPart", 5)
-        Humanoid = Character:WaitForChild("Humanoid", 5)
-    end
-
-    local success = false
-
-    pcall(function()
-        -- =========================================================================
-        -- TIPO 1: REMOTES & UNRELIABLE COM A BATERIA DE 8 PRESETS
-        -- =========================================================================
-        if entry.Type == "Remote" or entry.Type == "UnreliableRemote" then
-            local rem = entry.Object
-            if rem and rem.Parent then
-                local batches = buildPresetBatches(rem.Name, customArg or State.CustomArgString)
-                for _, args in ipairs(batches) do
-                    pcall(function()
-                        if rem:IsA("RemoteEvent") or rem.ClassName == "UnreliableRemoteEvent" then
-                            if #args == 0 then
-                                rem:FireServer()
-                            else
-                                rem:FireServer(unpack(args))
-                            end
-                        elseif rem:IsA("RemoteFunction") then
-                            if #args == 0 then
-                                rem:InvokeServer()
-                            else
-                                rem:InvokeServer(unpack(args))
-                            end
-                        end
-                    end)
-                end
-                success = true
-            end
-
-        -- =========================================================================
-        -- TIPO 2: BINDABLES (EVENTOS INTERNOS)
-        -- =========================================================================
-        elseif entry.Type == "Bindable" then
-            local bin = entry.Object
-            if bin and bin.Parent then
-                local batches = buildPresetBatches(bin.Name, customArg or State.CustomArgString)
-                for _, args in ipairs(batches) do
-                    pcall(function()
-                        if bin:IsA("BindableEvent") then
-                            if #args == 0 then bin:Fire() else bin:Fire(unpack(args)) end
-                        elseif bin:IsA("BindableFunction") then
-                            if #args == 0 then bin:Invoke() else bin:Invoke(unpack(args)) end
-                        end
-                    end)
-                end
-                success = true
-            end
-
-        -- =========================================================================
-        -- TIPO 3: PROXIMITYPROMPT COM CAMERA ANGLE BYPASS
-        -- =========================================================================
-        elseif entry.Type == "Prompt" then
-            local prompt = entry.Object
-            if prompt and prompt.Parent then
-                local promptPart = prompt.Parent:IsA("BasePart") and prompt.Parent or prompt.Parent:FindFirstChildWhichIsA("BasePart")
-                if promptPart then
-                    local origPos = RootPart.CFrame
-                    -- 1. Posiciona o personagem de frente
-                    RootPart.CFrame = promptPart.CFrame + Vector3.new(0, 1.2, 0)
-                    
-                    -- 2. Alinha a câmera diretamente para o prompt (Bypass de Line of Sight)
-                    pcall(function()
-                        local cam = workspace.CurrentCamera
-                        if cam then
-                            cam.CFrame = CFrame.new(cam.CFrame.Position, promptPart.Position)
-                        end
-                    end)
-
-                    if prompt:IsA("ProximityPrompt") then
-                        prompt.HoldDuration = 0
-                        prompt.MaxActivationDistance = 999999
-                        prompt.RequiresLineOfSight = false
-                        prompt.Enabled = true
-
-                        if fireproximityprompt then fireproximityprompt(prompt) end
-
-                        if firesignal then
-                            firesignal(prompt.PromptButtonHoldBegan)
-                            firesignal(prompt.Triggered)
-                            firesignal(prompt.PromptButtonHoldEnded)
-                        end
-
-                        pcall(function()
-                            VirtualInputManager:SendKeyEvent(true, prompt.KeyboardKeyCode or Enum.KeyCode.E, false, game)
-                            task.wait(0.02)
-                            VirtualInputManager:SendKeyEvent(false, prompt.KeyboardKeyCode or Enum.KeyCode.E, false, game)
-                        end)
-
-                    elseif prompt:IsA("ClickDetector") then
-                        if fireclickdetector then fireclickdetector(prompt) end
-                    end
-
-                    task.wait(0.06)
-                    RootPart.CFrame = origPos
-                    success = true
-                end
-            end
-
-        -- =========================================================================
-        -- TIPO 4: TOUCHPADS COM SIMULAÇÃO DE FÍSICA LANDED
-        -- =========================================================================
-        elseif entry.Type == "TouchPad" then
-            local part = entry.Object
-            if part and part:IsA("BasePart") and part.Parent then
-                local origPos = RootPart.CFrame
-                RootPart.CFrame = part.CFrame + Vector3.new(0, 1.5, 0)
-                RootPart.AssemblyLinearVelocity = Vector3.new(0, -5, 0)
-
-                -- Força o Humanoid no estado de aterrissagem para acionar verificação de toque
-                pcall(function()
-                    Humanoid:ChangeState(Enum.HumanoidStateType.Landed)
-                end)
-
-                local bodyLimbs = {RootPart, Character:FindFirstChild("Right Leg"), Character:FindFirstChild("Left Leg"), Character:FindFirstChild("Head")}
-                if getconnections then
-                    for _, conn in ipairs(getconnections(part.Touched)) do
-                        for _, limb in ipairs(bodyLimbs) do
-                            if limb then pcall(function() conn:Fire(limb) end) end
-                        end
-                    end
-                end
-
-                if firetouchinterest then
-                    firetouchinterest(RootPart, part, 0)
-                    task.wait(0.01)
-                    firetouchinterest(RootPart, part, 1)
-                end
-
-                task.wait(0.1)
-                RootPart.CFrame = origPos
-                success = true
-            end
-
-        -- =========================================================================
-        -- TIPO 5: FERRAMENTAS DO MAPA
-        -- =========================================================================
-        elseif entry.Type == "WorldTool" then
-            local tool = entry.Object
-            if tool and tool.Parent and not isFromOtherPlayer(tool) then
-                local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart")
-                if handle then
-                    local origPos = RootPart.CFrame
-                    RootPart.CFrame = handle.CFrame + Vector3.new(0, 1.2, 0)
-                    if firetouchinterest then
-                        firetouchinterest(RootPart, handle, 0)
-                        task.wait(0.01)
-                        firetouchinterest(RootPart, handle, 1)
-                    end
-                    Humanoid:EquipTool(tool)
-                    tool.Parent = Character
-                    task.wait(0.08)
-                    tool:Activate()
-                    RootPart.CFrame = origPos
-                    success = true
-                else
-                    tool.Parent = Backpack
-                    Humanoid:EquipTool(tool)
-                    tool:Activate()
-                    success = true
-                end
-            end
-        end
-    end)
-
-    return success
-end
-
--- ---------------------------------------------------------------------------------
--- 4. SCANNER TOTAL DE ELEMENTOS
--- ---------------------------------------------------------------------------------
-local function scanAllElementsV11()
+local function scanAllGameElementsV12()
     local entries = {}
     local seen = {}
 
-    -- A) REMOTES
+    -- A) REMOTES & UNRELIABLE
     for _, obj in ipairs(game:GetDescendants()) do
         if not seen[obj] then
             if obj:IsA("RemoteEvent") or obj.ClassName == "UnreliableRemoteEvent" then
@@ -440,7 +232,81 @@ local function scanAllElementsV11()
         end
     end
 
-    -- B) TOUCHPADS
+    -- B) ITENS (WORKSPACE, REPLICATEDSTORAGE, LIGHTING & MOCHILA)
+    local itemKeywords = {"tool", "sword", "gun", "weapon", "key", "relic", "coin", "gem", "badge", "trophy", "orb", "drop", "shard", "item", "collectible"}
+
+    -- 1. Tools e Modelos no Workspace
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if not isFromOtherPlayer(obj) and not obj:IsDescendantOf(Character) and not seen[obj] then
+            if obj:IsA("Tool") then
+                seen[obj] = true
+                table.insert(entries, {
+                    Id = "ToolW_" .. tostring(obj:GetDebugId() or math.random(10000, 99999)),
+                    Name = obj.Name,
+                    Type = "WorldTool",
+                    Category = "Itens",
+                    Icon = "🗡️",
+                    TypeLabel = "Tool no Mapa",
+                    Location = obj.Parent and obj.Parent.Name or "Workspace",
+                    Object = obj
+                })
+            elseif obj:IsA("Model") or obj:IsA("BasePart") then
+                local n = obj.Name:lower()
+                for _, kw in ipairs(itemKeywords) do
+                    if n:find(kw) then
+                        seen[obj] = true
+                        table.insert(entries, {
+                            Id = "ItemM_" .. tostring(obj:GetDebugId() or math.random(10000, 99999)),
+                            Name = obj.Name,
+                            Type = "WorldItem",
+                            Category = "Itens",
+                            Icon = "🎁",
+                            TypeLabel = "Colecionável/Item",
+                            Location = obj.Parent and obj.Parent.Name or "Workspace",
+                            Object = obj
+                        })
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    -- 2. Tools em ReplicatedStorage
+    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("Tool") and not seen[obj] then
+            seen[obj] = true
+            table.insert(entries, {
+                Id = "ToolR_" .. tostring(obj:GetDebugId() or math.random(10000, 99999)),
+                Name = obj.Name,
+                Type = "ReplicatedTool",
+                Category = "Itens",
+                Icon = "📦",
+                TypeLabel = "Item em Storage",
+                Location = obj.Parent and obj.Parent.Name or "ReplicatedStorage",
+                Object = obj
+            })
+        end
+    end
+
+    -- 3. Tools na própria Mochila
+    for _, obj in ipairs(Backpack:GetChildren()) do
+        if obj:IsA("Tool") and not seen[obj] then
+            seen[obj] = true
+            table.insert(entries, {
+                Id = "ToolB_" .. tostring(obj:GetDebugId() or math.random(10000, 99999)),
+                Name = obj.Name,
+                Type = "BackpackTool",
+                Category = "Itens",
+                Icon = "🎒",
+                TypeLabel = "Item na Mochila",
+                Location = "Inventário",
+                Object = obj
+            })
+        end
+    end
+
+    -- C) TOUCHPADS / BLOCKS COM TOUCH
     for _, obj in ipairs(workspace:GetDescendants()) do
         if not isFromOtherPlayer(obj) and not obj:IsDescendantOf(Character) then
             if obj:IsA("TouchTransmitter") and obj.Parent and obj.Parent:IsA("BasePart") and not seen[obj.Parent] then
@@ -474,7 +340,7 @@ local function scanAllElementsV11()
         end
     end
 
-    -- C) PROXIMITYPROMPT & CLICKDETECTOR
+    -- D) PROXIMITYPROMPT & CLICKDETECTOR
     for _, obj in ipairs(workspace:GetDescendants()) do
         if (obj:IsA("ProximityPrompt") or obj:IsA("ClickDetector")) and not isFromOtherPlayer(obj) and not seen[obj] then
             seen[obj] = true
@@ -495,25 +361,173 @@ local function scanAllElementsV11()
         end
     end
 
-    -- D) FERRAMENTAS DO MAPA
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Tool") and not isFromOtherPlayer(obj) and not obj:IsDescendantOf(Character) and not seen[obj] then
-            seen[obj] = true
-            table.insert(entries, {
-                Id = "Tool_" .. tostring(obj:GetDebugId() or math.random(10000, 99999)),
-                Name = obj.Name,
-                Type = "WorldTool",
-                Category = "Itens",
-                Icon = "🗡️",
-                TypeLabel = "Item Solto no Mapa",
-                Location = obj.Parent and obj.Parent.Name or "Workspace",
-                Object = obj
-            })
-        end
-    end
-
     State.ScannedEntries = entries
     return entries
+end
+
+-- ---------------------------------------------------------------------------------
+-- 4. EXECUTOR DE AÇÕES INDIVIDUAIS
+-- ---------------------------------------------------------------------------------
+local function executeAction(entry, specificArg)
+    if not Character or not RootPart or not Humanoid then
+        Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        RootPart = Character:WaitForChild("HumanoidRootPart", 5)
+        Humanoid = Character:WaitForChild("Humanoid", 5)
+    end
+
+    pcall(function()
+        -- REMOTES COM ARGUMENTO MANUAL OU PADRÃO
+        if entry.Type == "Remote" or entry.Type == "UnreliableRemote" or entry.Type == "Bindable" then
+            local rem = entry.Object
+            local argList = {}
+
+            if specificArg and specificArg ~= "" then
+                -- Trata argumento customizado
+                local num = tonumber(specificArg)
+                if num then
+                    table.insert(argList, {num})
+                elseif specificArg:lower() == "true" then
+                    table.insert(argList, {true})
+                elseif specificArg:lower() == "false" then
+                    table.insert(argList, {false})
+                else
+                    table.insert(argList, {specificArg})
+                end
+            else
+                -- Bateria completa se não houver argumento manual
+                table.insert(argList, {})
+                table.insert(argList, {true})
+                table.insert(argList, {true, true})
+                table.insert(argList, {1000})
+                table.insert(argList, {"Win"})
+                table.insert(argList, {"Complete"})
+                table.insert(argList, {"Claim"})
+                table.insert(argList, {RootPart})
+                for _, bId in ipairs(State.UniverseBadgeIds) do
+                    table.insert(argList, {bId})
+                    table.insert(argList, {"Award", bId})
+                end
+            end
+
+            for _, args in ipairs(argList) do
+                pcall(function()
+                    if rem:IsA("RemoteEvent") or rem.ClassName == "UnreliableRemoteEvent" then
+                        if #args == 0 then rem:FireServer() else rem:FireServer(unpack(args)) end
+                    elseif rem:IsA("RemoteFunction") then
+                        if #args == 0 then rem:InvokeServer() else rem:InvokeServer(unpack(args)) end
+                    elseif rem:IsA("BindableEvent") then
+                        if #args == 0 then bin:Fire() else bin:Fire(unpack(args)) end
+                    elseif rem:IsA("BindableFunction") then
+                        if #args == 0 then bin:Invoke() else bin:Invoke(unpack(args)) end
+                    end
+                end)
+            end
+
+        -- ITENS DO MAPA E MOCHILA
+        elseif entry.Type == "WorldTool" or entry.Type == "WorldItem" then
+            local item = entry.Object
+            if item and item.Parent and not isFromOtherPlayer(item) then
+                local handle = item:IsA("Tool") and (item:FindFirstChild("Handle") or item:FindFirstChildWhichIsA("BasePart")) or (item:IsA("BasePart") and item or item:FindFirstChildWhichIsA("BasePart"))
+                if handle then
+                    local origPos = RootPart.CFrame
+                    RootPart.CFrame = handle.CFrame + Vector3.new(0, 1.2, 0)
+                    if firetouchinterest then
+                        firetouchinterest(RootPart, handle, 0)
+                        task.wait(0.01)
+                        firetouchinterest(RootPart, handle, 1)
+                    end
+                    if item:IsA("Tool") then
+                        Humanoid:EquipTool(item)
+                        item.Parent = Character
+                        task.wait(0.08)
+                        item:Activate()
+                    end
+                    RootPart.CFrame = origPos
+                end
+            end
+
+        elseif entry.Type == "ReplicatedTool" then
+            local tool = entry.Object
+            if tool then
+                local clone = tool:Clone()
+                clone.Parent = Backpack
+                Humanoid:EquipTool(clone)
+                task.wait(0.08)
+                clone:Activate()
+            end
+
+        elseif entry.Type == "BackpackTool" then
+            local tool = entry.Object
+            if tool and tool.Parent then
+                tool.Parent = Character
+                task.wait(0.08)
+                tool:Activate()
+                task.wait(0.04)
+                tool.Parent = Backpack
+            end
+
+        -- PROMPTS COM ALINHAMENTO DE CÂMERA
+        elseif entry.Type == "Prompt" then
+            local prompt = entry.Object
+            if prompt and prompt.Parent then
+                local promptPart = prompt.Parent:IsA("BasePart") and prompt.Parent or prompt.Parent:FindFirstChildWhichIsA("BasePart")
+                if promptPart then
+                    local origPos = RootPart.CFrame
+                    RootPart.CFrame = promptPart.CFrame + Vector3.new(0, 1.2, 0)
+                    pcall(function()
+                        local cam = workspace.CurrentCamera
+                        if cam then cam.CFrame = CFrame.new(cam.CFrame.Position, promptPart.Position) end
+                    end)
+
+                    if prompt:IsA("ProximityPrompt") then
+                        prompt.HoldDuration = 0
+                        prompt.MaxActivationDistance = 999999
+                        prompt.RequiresLineOfSight = false
+                        prompt.Enabled = true
+
+                        if fireproximityprompt then fireproximityprompt(prompt) end
+                        if firesignal then
+                            firesignal(prompt.PromptButtonHoldBegan)
+                            firesignal(prompt.Triggered)
+                            firesignal(prompt.PromptButtonHoldEnded)
+                        end
+                        pcall(function()
+                            VirtualInputManager:SendKeyEvent(true, prompt.KeyboardKeyCode or Enum.KeyCode.E, false, game)
+                            task.wait(0.02)
+                            VirtualInputManager:SendKeyEvent(false, prompt.KeyboardKeyCode or Enum.KeyCode.E, false, game)
+                        end)
+                    elseif prompt:IsA("ClickDetector") then
+                        if fireclickdetector then fireclickdetector(prompt) end
+                    end
+                    task.wait(0.06)
+                    RootPart.CFrame = origPos
+                end
+            end
+
+        -- TOUCHPADS
+        elseif entry.Type == "TouchPad" then
+            local part = entry.Object
+            if part and part:IsA("BasePart") and part.Parent then
+                local origPos = RootPart.CFrame
+                RootPart.CFrame = part.CFrame + Vector3.new(0, 1.5, 0)
+                RootPart.AssemblyLinearVelocity = Vector3.new(0, -4, 0)
+                pcall(function() Humanoid:ChangeState(Enum.HumanoidStateType.Landed) end)
+
+                if getconnections then
+                    for _, conn in ipairs(getconnections(part.Touched)) do
+                        pcall(function() conn:Fire(RootPart) end)
+                    end
+                end
+                if firetouchinterest then
+                    firetouchinterest(RootPart, part, 0)
+                    task.wait(0.01)
+                    firetouchinterest(RootPart, part, 1)
+                end
+                task.wait(0.08)
+                RootPart.CFrame = origPos
+            end
+        end
+    end)
 end
 
 -- ---------------------------------------------------------------------------------
@@ -546,23 +560,23 @@ local function initRemoteSpy(onCapture)
 end
 
 -- ---------------------------------------------------------------------------------
--- 6. INTERFACE GRÁFICA V11
+-- 6. INTERFACE GRÁFICA V12 (CYBER APEX LAB)
 -- ---------------------------------------------------------------------------------
-local function buildInterfaceV11()
+local function buildInterfaceV12()
     local parentGui = (gethui and gethui()) or game:GetService("CoreGui"):FindFirstChild("RobloxGui") or LocalPlayer:WaitForChild("PlayerGui")
-    local old = parentGui:FindFirstChild("BadgeMaster_V11")
+    local old = parentGui:FindFirstChild("BadgeMaster_V12")
     if old then old:Destroy() end
 
     local Screen = Instance.new("ScreenGui")
-    Screen.Name = "BadgeMaster_V11"
+    Screen.Name = "BadgeMaster_V12"
     Screen.ResetOnSpawn = false
 
     -- Botão Mobile Flutuante
     local MobBtn = Instance.new("TextButton")
     MobBtn.Size = UDim2.new(0, 52, 0, 52)
     MobBtn.Position = UDim2.new(0, 16, 0.45, 0)
-    MobBtn.BackgroundColor3 = Color3.fromRGB(14, 18, 26)
-    MobBtn.Text = "🔥"
+    MobBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 28)
+    MobBtn.Text = "💎"
     MobBtn.TextSize = 24
     MobBtn.BorderSizePixel = 0
     MobBtn.Parent = Screen
@@ -572,15 +586,15 @@ local function buildInterfaceV11()
     mbCorner.Parent = MobBtn
 
     local mbStroke = Instance.new("UIStroke")
-    mbStroke.Color = Color3.fromRGB(255, 75, 90)
+    mbStroke.Color = Color3.fromRGB(0, 240, 255)
     mbStroke.Thickness = 2
     mbStroke.Parent = MobBtn
 
     -- Janela Principal
     local Window = Instance.new("Frame")
-    Window.Size = UDim2.new(0, 630, 0, 500)
-    Window.Position = UDim2.new(0.5, -315, 0.5, -250)
-    Window.BackgroundColor3 = Color3.fromRGB(11, 13, 19)
+    Window.Size = UDim2.new(0, 650, 0, 510)
+    Window.Position = UDim2.new(0.5, -325, 0.5, -255)
+    Window.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
     Window.BorderSizePixel = 0
     Window.Active = true
     Window.ClipsDescendants = true
@@ -591,11 +605,11 @@ local function buildInterfaceV11()
     wCorner.Parent = Window
 
     local wStroke = Instance.new("UIStroke")
-    wStroke.Color = Color3.fromRGB(38, 48, 70)
+    wStroke.Color = Color3.fromRGB(0, 180, 255)
     wStroke.Thickness = 1.4
     wStroke.Parent = Window
 
-    -- Header
+    -- TopBar
     local TopBar = Instance.new("Frame")
     TopBar.Size = UDim2.new(1, 0, 0, 42)
     TopBar.BackgroundColor3 = Color3.fromRGB(16, 20, 30)
@@ -610,8 +624,8 @@ local function buildInterfaceV11()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 14, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🔥 BADGE MASTER V11  |  APEX NETWORK & REMOTE OVERHAUL"
-    Title.TextColor3 = Color3.fromRGB(255, 80, 95)
+    Title.Text = "💎 BADGE MASTER V12  |  THE APEX TESTING LAB"
+    Title.TextColor3 = Color3.fromRGB(0, 240, 255)
     Title.TextSize = 12
     Title.Font = Enum.Font.GothamBold
     Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -663,33 +677,48 @@ local function buildInterfaceV11()
     Body.BackgroundTransparency = 1
     Body.Parent = Window
 
-    -- 1. Barra de Ações Principais
+    -- 1. Barra de Ações Mestres (Topo)
     local TopCmds = Instance.new("Frame")
-    TopCmds.Size = UDim2.new(1, 0, 0, 40)
+    TopCmds.Size = UDim2.new(1, 0, 0, 38)
     TopCmds.BackgroundTransparency = 1
     TopCmds.Parent = Body
 
-    local ForceAllBtn = Instance.new("TextButton")
-    ForceAllBtn.Size = UDim2.new(0.50, -4, 1, 0)
-    ForceAllBtn.BackgroundColor3 = Color3.fromRGB(230, 40, 65)
-    ForceAllBtn.Text = "⚡ FORÇAR COM OS 8 PRESETS DE REDE"
-    ForceAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    ForceAllBtn.TextSize = 11
-    ForceAllBtn.Font = Enum.Font.GothamBold
-    ForceAllBtn.BorderSizePixel = 0
-    ForceAllBtn.Parent = TopCmds
+    local MassTestBtn = Instance.new("TextButton")
+    MassTestBtn.Size = UDim2.new(0.40, -4, 1, 0)
+    MassTestBtn.BackgroundColor3 = Color3.fromRGB(220, 35, 60)
+    MassTestBtn.Text = "🚀 TESTAR TUDO NO JOGO"
+    MassTestBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MassTestBtn.TextSize = 11
+    MassTestBtn.Font = Enum.Font.GothamBold
+    MassTestBtn.BorderSizePixel = 0
+    MassTestBtn.Parent = TopCmds
 
-    local faCorner = Instance.new("UICorner")
-    faCorner.CornerRadius = UDim.new(0, 8)
-    faCorner.Parent = ForceAllBtn
+    local mtCorner = Instance.new("UICorner")
+    mtCorner.CornerRadius = UDim.new(0, 8)
+    mtCorner.Parent = MassTestBtn
+
+    local EspBtn = Instance.new("TextButton")
+    EspBtn.Size = UDim2.new(0.24, -4, 1, 0)
+    EspBtn.Position = UDim2.new(0.40, 2, 0, 0)
+    EspBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 120)
+    EspBtn.Text = "👁️ ESP: OFF"
+    EspBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    EspBtn.TextSize = 11
+    EspBtn.Font = Enum.Font.GothamBold
+    EspBtn.BorderSizePixel = 0
+    EspBtn.Parent = TopCmds
+
+    local ebCorner = Instance.new("UICorner")
+    ebCorner.CornerRadius = UDim.new(0, 8)
+    ebCorner.Parent = EspBtn
 
     local RescanBtn = Instance.new("TextButton")
-    RescanBtn.Size = UDim2.new(0.28, -4, 1, 0)
-    RescanBtn.Position = UDim2.new(0.50, 2, 0, 0)
+    RescanBtn.Size = UDim2.new(0.20, -4, 1, 0)
+    RescanBtn.Position = UDim2.new(0.64, 2, 0, 0)
     RescanBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
     RescanBtn.Text = "🔄 Re-Escanear"
     RescanBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    RescanBtn.TextSize = 11
+    RescanBtn.TextSize = 10
     RescanBtn.Font = Enum.Font.GothamBold
     RescanBtn.BorderSizePixel = 0
     RescanBtn.Parent = TopCmds
@@ -699,12 +728,12 @@ local function buildInterfaceV11()
     rbCorner.Parent = RescanBtn
 
     local StopAutosBtn = Instance.new("TextButton")
-    StopAutosBtn.Size = UDim2.new(0.22, 0, 1, 0)
-    StopAutosBtn.Position = UDim2.new(0.78, 2, 0, 0)
+    StopAutosBtn.Size = UDim2.new(0.16, 0, 1, 0)
+    StopAutosBtn.Position = UDim2.new(0.84, 2, 0, 0)
     StopAutosBtn.BackgroundColor3 = Color3.fromRGB(42, 48, 64)
     StopAutosBtn.Text = "⏹️ Parar Autos"
     StopAutosBtn.TextColor3 = Color3.fromRGB(220, 225, 235)
-    StopAutosBtn.TextSize = 10
+    StopAutosBtn.TextSize = 9
     StopAutosBtn.Font = Enum.Font.GothamBold
     StopAutosBtn.BorderSizePixel = 0
     StopAutosBtn.Parent = TopCmds
@@ -713,48 +742,67 @@ local function buildInterfaceV11()
     saCorner.CornerRadius = UDim.new(0, 8)
     saCorner.Parent = StopAutosBtn
 
-    -- 2. Injetor de Argumento Customizado (Novo na V11)
-    local CustomArgRow = Instance.new("Frame")
-    CustomArgRow.Size = UDim2.new(1, 0, 0, 32)
-    CustomArgRow.Position = UDim2.new(0, 0, 0, 46)
-    CustomArgRow.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
-    CustomArgRow.BorderSizePixel = 0
-    CustomArgRow.Parent = Body
+    -- 2. Barra de Parâmetros Customizados do Lab
+    local ParamRow = Instance.new("Frame")
+    ParamRow.Size = UDim2.new(1, 0, 0, 34)
+    ParamRow.Position = UDim2.new(0, 0, 0, 44)
+    ParamRow.BackgroundColor3 = Color3.fromRGB(16, 20, 30)
+    ParamRow.BorderSizePixel = 0
+    ParamRow.Parent = Body
 
-    local carCorner = Instance.new("UICorner")
-    carCorner.CornerRadius = UDim.new(0, 6)
-    carCorner.Parent = CustomArgRow
+    local prCorner = Instance.new("UICorner")
+    prCorner.CornerRadius = UDim.new(0, 8)
+    prCorner.Parent = ParamRow
 
-    local carLabel = Instance.new("TextLabel")
-    carLabel.Size = UDim2.new(0, 150, 1, 0)
-    carLabel.Position = UDim2.new(0, 10, 0, 0)
-    carLabel.BackgroundTransparency = 1
-    carLabel.Text = "💉 Argumento Manual:"
-    carLabel.TextColor3 = Color3.fromRGB(255, 180, 50)
-    carLabel.TextSize = 10
-    carLabel.Font = Enum.Font.GothamBold
-    carLabel.TextXAlignment = Enum.TextXAlignment.Left
-    carLabel.Parent = CustomArgRow
+    local prLabel = Instance.new("TextLabel")
+    prLabel.Size = UDim2.new(0, 140, 1, 0)
+    prLabel.Position = UDim2.new(0, 8, 0, 0)
+    prLabel.BackgroundTransparency = 1
+    prLabel.Text = "🧪 Argumento de Teste:"
+    prLabel.TextColor3 = Color3.fromRGB(255, 190, 60)
+    prLabel.TextSize = 10
+    prLabel.Font = Enum.Font.GothamBold
+    prLabel.TextXAlignment = Enum.TextXAlignment.Left
+    prLabel.Parent = ParamRow
 
     local CustomArgInput = Instance.new("TextBox")
-    CustomArgInput.Size = UDim2.new(1, -165, 0, 24)
-    CustomArgInput.Position = UDim2.new(0, 155, 0.5, -12)
-    CustomArgInput.BackgroundColor3 = Color3.fromRGB(26, 32, 46)
-    CustomArgInput.PlaceholderText = "Ex: 'Award', 12345 ou true ou {'Action':'Win'}"
+    CustomArgInput.Size = UDim2.new(0.60, -10, 0, 24)
+    CustomArgInput.Position = UDim2.new(0, 145, 0.5, -12)
+    CustomArgInput.BackgroundColor3 = Color3.fromRGB(24, 30, 44)
+    CustomArgInput.PlaceholderText = "Ex: 'Award', 12345 ou true ou 1000..."
     CustomArgInput.PlaceholderColor3 = Color3.fromRGB(110, 120, 140)
     CustomArgInput.Text = ""
     CustomArgInput.TextColor3 = Color3.fromRGB(255, 255, 255)
     CustomArgInput.TextSize = 10
     CustomArgInput.Font = Enum.Font.Code
     CustomArgInput.BorderSizePixel = 0
-    CustomArgInput.Parent = CustomArgRow
+    CustomArgInput.Parent = ParamRow
 
     local caiCorner = Instance.new("UICorner")
-    caiCorner.CornerRadius = UDim.new(0, 4)
+    caiCorner.CornerRadius = UDim.new(0, 6)
     caiCorner.Parent = CustomArgInput
 
+    local ApplyToAllBtn = Instance.new("TextButton")
+    ApplyToAllBtn.Size = UDim2.new(0.40, -145, 0, 24)
+    ApplyToAllBtn.Position = UDim2.new(1, - (ApplyToAllBtn.Size.X.Offset + 140), 0.5, -12)
+    ApplyToAllBtn.Position = UDim2.new(0.60, 140, 0.5, -12)
+    ApplyToAllBtn.Size = UDim2.new(1, - (145 + CustomArgInput.Size.X.Offset + 10), 0, 24)
+    ApplyToAllBtn.Size = UDim2.new(0.20, 0, 0, 24)
+    ApplyToAllBtn.Position = UDim2.new(1, - (ApplyToAllBtn.Size.X.Offset + 8), 0.5, -12)
+    ApplyToAllBtn.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
+    ApplyToAllBtn.Text = "Injetar Este em Tudo"
+    ApplyToAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ApplyToAllBtn.TextSize = 10
+    ApplyToAllBtn.Font = Enum.Font.GothamBold
+    ApplyToAllBtn.BorderSizePixel = 0
+    ApplyToAllBtn.Parent = ParamRow
+
+    local atCorner = Instance.new("UICorner")
+    atCorner.CornerRadius = UDim.new(0, 6)
+    atCorner.Parent = ApplyToAllBtn
+
     CustomArgInput.FocusLost:Connect(function()
-        State.CustomArgString = CustomArgInput.Text
+        State.CustomArg = CustomArgInput.Text
     end)
 
     -- 3. Categorias (Pills)
@@ -770,7 +818,7 @@ local function buildInterfaceV11()
     catLayout.Parent = CatRow
 
     local CatBtns = {}
-    local Categories = {"Todos", "Remotes", "Bindables", "Prompts", "Pads", "Itens", "🛰️ Spy"}
+    local Categories = {"Todos", "Itens", "Remotes", "Prompts", "Pads", "Bindables", "🛰️ Spy"}
 
     -- 4. Barra de Busca e Status
     local SearchRow = Instance.new("Frame")
@@ -793,7 +841,7 @@ local function buildInterfaceV11()
     SearchBox.Size = UDim2.new(0.60, 0, 1, 0)
     SearchBox.Position = UDim2.new(0.40, 0, 0, 0)
     SearchBox.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
-    SearchBox.PlaceholderText = "🔍 Buscar remote, evento ou prompt..."
+    SearchBox.PlaceholderText = "🔍 Buscar item, remote ou prompt..."
     SearchBox.PlaceholderColor3 = Color3.fromRGB(110, 120, 140)
     SearchBox.Text = ""
     SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -952,7 +1000,7 @@ local function buildInterfaceV11()
                 runOnceBtn.Size = UDim2.new(0, 75, 0, 30)
                 runOnceBtn.Position = UDim2.new(1, -170, 0.5, -15)
                 runOnceBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
-                runOnceBtn.Text = "▶ Disparar"
+                runOnceBtn.Text = "▶ Testar"
                 runOnceBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
                 runOnceBtn.TextSize = 10
                 runOnceBtn.Font = Enum.Font.GothamBold
@@ -964,12 +1012,12 @@ local function buildInterfaceV11()
                 rc.Parent = runOnceBtn
 
                 runOnceBtn.MouseButton1Click:Connect(function()
-                    runOnceBtn.Text = "Disparando..."
+                    runOnceBtn.Text = "Testando..."
                     runOnceBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
                     task.spawn(function()
-                        executeAction(entry, State.CustomArgString)
+                        executeAction(entry, State.CustomArg)
                         task.wait(0.2)
-                        runOnceBtn.Text = "▶ Disparar"
+                        runOnceBtn.Text = "▶ Testar"
                         runOnceBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
                     end)
                 end)
@@ -1002,7 +1050,7 @@ local function buildInterfaceV11()
 
                         task.spawn(function()
                             while State.ActiveLoops[entry.Id] do
-                                executeAction(entry, State.CustomArgString)
+                                executeAction(entry, State.CustomArg)
                                 task.wait(0.25)
                             end
                         end)
@@ -1018,7 +1066,7 @@ local function buildInterfaceV11()
     for _, catName in ipairs(Categories) do
         local pill = Instance.new("TextButton")
         pill.Size = UDim2.new(0, catName:find("Spy") and 85 or 70, 1, 0)
-        pill.BackgroundColor3 = (State.ActiveCategory == catName) and Color3.fromRGB(255, 75, 90) or Color3.fromRGB(20, 25, 36)
+        pill.BackgroundColor3 = (State.ActiveCategory == catName) and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(20, 25, 36)
         pill.Text = catName
         pill.TextColor3 = Color3.fromRGB(255, 255, 255)
         pill.TextSize = 10
@@ -1035,7 +1083,7 @@ local function buildInterfaceV11()
         pill.MouseButton1Click:Connect(function()
             State.ActiveCategory = catName
             for cName, btn in pairs(CatBtns) do
-                btn.BackgroundColor3 = (cName == catName) and Color3.fromRGB(255, 75, 90) or Color3.fromRGB(20, 25, 36)
+                btn.BackgroundColor3 = (cName == catName) and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(20, 25, 36)
             end
             renderCards()
         end)
@@ -1045,16 +1093,48 @@ local function buildInterfaceV11()
         renderCards(SearchBox.Text)
     end)
 
+    -- Toggle ESP
+    EspBtn.MouseButton1Click:Connect(function()
+        local nextState = not State.EspEnabled
+        toggleEsp(nextState)
+        EspBtn.Text = nextState and "👁️ ESP: ON" or "👁️ ESP: OFF"
+        EspBtn.BackgroundColor3 = nextState and Color3.fromRGB(0, 240, 140) or Color3.fromRGB(0, 180, 120)
+    end)
+
+    -- Injetar Argumento Manual em Tudo
+    ApplyToAllBtn.MouseButton1Click:Connect(function()
+        if State.IsBatchRunning then return end
+        State.IsBatchRunning = true
+        ApplyToAllBtn.Text = "Injetando..."
+        StatusText.Text = "Injetando argumento manual em todos os remotes..."
+
+        task.spawn(function()
+            local count = 0
+            for _, entry in ipairs(State.ScannedEntries) do
+                if entry.Category == "Remotes" or entry.Category == "Bindables" then
+                    executeAction(entry, State.CustomArg)
+                    count = count + 1
+                    task.wait(State.RemoteDelay)
+                end
+            end
+            ApplyToAllBtn.Text = "Injetado!"
+            StatusText.Text = string.format("Argumento '%s' injetado em %d remotes!", tostring(State.CustomArg), count)
+            task.wait(1)
+            ApplyToAllBtn.Text = "Injetar Este em Tudo"
+            State.IsBatchRunning = false
+        end)
+    end)
+
     return {
         Status = StatusText,
-        ForceAllBtn = ForceAllBtn,
+        MassTestBtn = MassTestBtn,
         RescanBtn = RescanBtn,
         StopAutosBtn = StopAutosBtn,
         Render = renderCards
     }
 end
 
-local UI = buildInterfaceV11()
+local UI = buildInterfaceV12()
 
 initRemoteSpy(function()
     if State.ActiveCategory == "🛰️ Spy" then
@@ -1065,38 +1145,39 @@ end)
 -- ---------------------------------------------------------------------------------
 -- 7. VINCULAÇÃO DOS BOTÕES
 -- ---------------------------------------------------------------------------------
-UI.ForceAllBtn.MouseButton1Click:Connect(function()
+UI.MassTestBtn.MouseButton1Click:Connect(function()
     if State.IsBatchRunning then return end
     State.IsBatchRunning = true
-    UI.ForceAllBtn.Text = "INJETANDO 8 PRESETS EM TUDO..."
-    UI.ForceAllBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 120)
-    UI.Status.Text = "Executando bateria completa de injeção..."
+    UI.MassTestBtn.Text = "TESTANDO TUDO NO MAPA..."
+    UI.MassTestBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 120)
+    UI.Status.Text = "Iniciando teste massivo de remotes, itens e prompts..."
 
     task.spawn(function()
-        local entries = scanAllElementsV11()
+        local entries = scanAllGameElementsV12()
         UI.Render()
 
         local total = #entries
         for i = 1, total do
             local e = entries[i]
-            UI.Status.Text = string.format("Injetando (%d/%d): %s", i, total, e.Name)
-            executeAction(e, State.CustomArgString)
-            task.wait(0.015)
+            UI.Status.Text = string.format("Testando (%d/%d): %s", i, total, e.Name)
+            executeAction(e, State.CustomArg)
+            task.wait(State.RemoteDelay)
         end
 
-        UI.Status.Text = "Finalizado com sucesso! Todos os 8 presets foram aplicados."
-        UI.ForceAllBtn.Text = "⚡ FORÇAR COM OS 8 PRESETS DE REDE"
-        UI.ForceAllBtn.BackgroundColor3 = Color3.fromRGB(230, 40, 65)
+        UI.Status.Text = "Finalizado! Todos os elementos foram testados."
+        UI.MassTestBtn.Text = "🚀 TESTAR TUDO NO JOGO"
+        UI.MassTestBtn.BackgroundColor3 = Color3.fromRGB(220, 35, 60)
         State.IsBatchRunning = false
     end)
 end)
 
 UI.RescanBtn.MouseButton1Click:Connect(function()
-    UI.Status.Text = "Re-escaneando o mapa e rede..."
+    UI.Status.Text = "Atualizando mapa, itens e eventos..."
     task.spawn(function()
-        scanAllElementsV11()
+        scanAllGameElementsV12()
         UI.Render()
-        UI.Status.Text = "Escaneamento V11 atualizado!"
+        if State.EspEnabled then toggleEsp(true) end
+        UI.Status.Text = "Escaneamento V12 atualizado!"
     end)
 end)
 
@@ -1107,8 +1188,8 @@ UI.StopAutosBtn.MouseButton1Click:Connect(function()
 end)
 
 task.delay(0.5, function()
-    scanAllElementsV11()
+    scanAllGameElementsV12()
     UI.Render()
 end)
 
-print("[BadgeMaster V11] Apex Network Overhaul carregado.")
+print("[BadgeMaster V12] Apex Testing Lab carregado com sucesso!")
