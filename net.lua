@@ -1,50 +1,52 @@
 --[[
     =================================================================================
-    ⚡ BADGE MASTER V6 - THE APEX EXPLOIT & SIGNAL BYPASS SUITE
+    🎁 BADGE MASTER V7 - ITEM FORCE, VACUUM & AUTO-EQUIP SUITE
     =================================================================================
-    Se as versões anteriores não entregaram as badges, foi por um destes motivos reais:
+    O DIAGNÓSTICO DEFINITIVO:
+    Muitas badges no Roblox NÃO são dadas por pisar no chão nem por remotes diretos.
+    Elas exigem que seu personagem:
+    1. PEGUE itens espalhados pelo mapa (Tools, Chaves, Relíquias, Troféus, Colecionáveis).
+    2. COLOQUE os itens na Mochila (Backpack).
+    3. SEGURE o item na mão (Equipar no Character).
+    4. ATIVE/USE o item (Disparo do evento Tool.Activated).
     
-    1. O jogo usa scripts Lua customizados no .Touched que ignoram 'firetouchinterest'.
-       -> SOLUÇÃO V6: Disparo direto via 'getconnections(part.Touched)' (executa o script
-          do desenvolvedor diretamente na raiz, sem depender da engine de física).
-          
-    2. As badges dependem de MENUS DE CONQUISTA (UI/GUIs de Recompensa).
-       -> SOLUÇÃO V6: Auto-Claimer de PlayerGui. Clica em todos os botões de 'Claim',
-          'Resgatar', 'Recompensas' e 'Conquistas' usando 'firesignal'.
-          
-    3. As badges exigem interação real do teclado (VirtualInputManager).
-       -> SOLUÇÃO V6: Simulação de hardware virtual pressionando 'E' e cliques reais.
-       
-    4. O jogo exige que o boneco fique fisicamente sobre a peça por 0.2s a 0.5s.
-       -> SOLUÇÃO V6: Modo Step-Dwell (pisa, ancora, espera resposta do servidor, avança).
-       
-    5. O usuário quer forçar uma Badge ESPECÍFICA que não veio.
-       -> SOLUÇÃO V6: Aba de Injeção Direta por ID (você cola o ID e o script dispara
-          todos os 10 vetores exclusivamente nela até entregar).
+    O QUE A V7 FAZ DE FORMA AUTOMATIZADA:
+    - [VÁCUO GERAL DE ITENS (ITEM MAGNET)]:
+      Localiza todas as 'Tools' e itens em qualquer lugar do Workspace e força
+      a coleta (via Humanoid:EquipTool, toque no Handle e teleporte instantâneo).
+      
+    - [AUTO-EQUIP & ACTIVATOR EM MASSA]:
+      Pega todos os itens da sua mochila, equipa um por um na sua mão, espera o
+      tempo de registro do servidor, dispara a ativação (:Activate()) e avança.
+      
+    - [CLONAGEM DE REPLICATEDSTORAGE]:
+      Varre pastas de itens guardados em ReplicatedStorage (onde ficam itens de inventário
+      e conquistas) e tenta trazer para o jogador ou disparar os remotes de GiveTool.
+      
+    - [FORÇADOR DE ITENS EM PEDESTAIS]:
+      Dispara instantaneamente ProximityPrompts e ClickDetectors de itens em mostruários.
     =================================================================================
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local HttpService = game:GetService("HttpService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
+local Backpack = LocalPlayer:WaitForChild("Backpack")
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local RootPart = Character:WaitForChild("HumanoidRootPart", 10)
+local Humanoid = Character:WaitForChild("Humanoid", 10)
 
--- Estado do Script
+-- Estado da V7
 local State = {
     IsRunning = false,
-    ShouldStop = false,
-    BadgesApi = {},
-    SelectedBadgeId = nil
+    ShouldStop = false
 }
 
 -- ---------------------------------------------------------------------------------
--- 0. ANTI-AFK
+-- 0. ANTI-AFK PERMANENTE
 -- ---------------------------------------------------------------------------------
 LocalPlayer.Idled:Connect(function()
     local vu = game:GetService("VirtualUser")
@@ -52,78 +54,33 @@ LocalPlayer.Idled:Connect(function()
     vu:ClickButton2(Vector2.new(0, 0))
 end)
 
--- ---------------------------------------------------------------------------------
--- 1. CONSULTA DE BADGES DA API OFICIAL
--- ---------------------------------------------------------------------------------
-local function fetchApiBadges()
-    if #State.BadgesApi > 0 then return State.BadgesApi end
-    local uId = game.GameId
-    if uId == 0 then return {} end
-
-    local list = {}
-    local cursor = ""
-    local page = 0
-
-    repeat
-        page = page + 1
-        local url = string.format("https://badges.roproxy.com/v1/universes/%d/badges?limit=100&cursor=%s", uId, cursor)
-        local success, body
-
-        pcall(function()
-            if (syn and syn.request) or (http and http.request) or request then
-                local req = (syn and syn.request) or (http and http.request) or request
-                local r = req({Url = url, Method = "GET"})
-                body = r.Body
-                success = (r.StatusCode == 200)
-            elseif game.HttpGet then
-                body = game:HttpGet(url)
-                success = (body ~= nil and #body > 0)
-            end
-        end)
-
-        if success and body then
-            local data = HttpService:JSONDecode(body)
-            if data and data.data then
-                for _, item in ipairs(data.data) do
-                    table.insert(list, {
-                        Id = item.id,
-                        Name = item.name or "Emblema",
-                        Description = item.description or ""
-                    })
-                end
-                cursor = data.nextPageCursor or ""
-            else
-                break
-            end
-        else
-            break
-        end
-    until cursor == "" or cursor == nil or page >= 10
-
-    State.BadgesApi = list
-    return list
-end
+-- Mantém referências atualizadas após respawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+    Character = char
+    RootPart = char:WaitForChild("HumanoidRootPart", 10)
+    Humanoid = char:WaitForChild("Humanoid", 10)
+    Backpack = LocalPlayer:WaitForChild("Backpack")
+end)
 
 -- ---------------------------------------------------------------------------------
--- 2. INTERFACE GRÁFICA V6 (DARK APEX HUD)
+-- 1. INTERFACE GRÁFICA V7 (ITEM MASTER HUD)
 -- ---------------------------------------------------------------------------------
-local function buildInterfaceV6()
+local function buildInterfaceV7()
     local parentGui = (gethui and gethui()) or game:GetService("CoreGui"):FindFirstChild("RobloxGui") or LocalPlayer:WaitForChild("PlayerGui")
-    local old = parentGui:FindFirstChild("BadgeMaster_V6")
+    local old = parentGui:FindFirstChild("BadgeMaster_V7")
     if old then old:Destroy() end
 
     local Screen = Instance.new("ScreenGui")
-    Screen.Name = "BadgeMaster_V6"
+    Screen.Name = "BadgeMaster_V7"
     Screen.ResetOnSpawn = false
 
     -- Botão Mobile Flutuante
     local MobBtn = Instance.new("TextButton")
     MobBtn.Size = UDim2.new(0, 50, 0, 50)
-    MobBtn.Position = UDim2.new(0, 16, 0.42, 0)
-    MobBtn.BackgroundColor3 = Color3.fromRGB(18, 20, 28)
-    MobBtn.Text = "⚡"
+    MobBtn.Position = UDim2.new(0, 16, 0.45, 0)
+    MobBtn.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
+    MobBtn.Text = "🎁"
     MobBtn.TextSize = 22
-    MobBtn.TextColor3 = Color3.fromRGB(0, 255, 180)
     MobBtn.BorderSizePixel = 0
     MobBtn.Parent = Screen
 
@@ -132,15 +89,15 @@ local function buildInterfaceV6()
     mbCorner.Parent = MobBtn
 
     local mbStroke = Instance.new("UIStroke")
-    mbStroke.Color = Color3.fromRGB(0, 255, 180)
+    mbStroke.Color = Color3.fromRGB(255, 180, 0)
     mbStroke.Thickness = 2
     mbStroke.Parent = MobBtn
 
     -- Janela Principal
     local Window = Instance.new("Frame")
-    Window.Size = UDim2.new(0, 540, 0, 390)
-    Window.Position = UDim2.new(0.5, -270, 0.5, -195)
-    Window.BackgroundColor3 = Color3.fromRGB(12, 14, 20)
+    Window.Size = UDim2.new(0, 480, 0, 380)
+    Window.Position = UDim2.new(0.5, -240, 0.5, -190)
+    Window.BackgroundColor3 = Color3.fromRGB(15, 17, 24)
     Window.BorderSizePixel = 0
     Window.Active = true
     Window.ClipsDescendants = true
@@ -151,14 +108,14 @@ local function buildInterfaceV6()
     wCorner.Parent = Window
 
     local wStroke = Instance.new("UIStroke")
-    wStroke.Color = Color3.fromRGB(35, 42, 60)
+    wStroke.Color = Color3.fromRGB(45, 52, 72)
     wStroke.Thickness = 1.4
     wStroke.Parent = Window
 
-    -- TopBar
+    -- Header
     local TopBar = Instance.new("Frame")
     TopBar.Size = UDim2.new(1, 0, 0, 42)
-    TopBar.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
+    TopBar.BackgroundColor3 = Color3.fromRGB(22, 26, 38)
     TopBar.BorderSizePixel = 0
     TopBar.Parent = Window
 
@@ -170,8 +127,8 @@ local function buildInterfaceV6()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 14, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "⚡ BADGE MASTER V6  |  APEX SIGNAL SUITE"
-    Title.TextColor3 = Color3.fromRGB(0, 255, 180)
+    Title.Text = "🎁 BADGE MASTER V7  |  ITEM & TOOL FORCER"
+    Title.TextColor3 = Color3.fromRGB(255, 195, 0)
     Title.TextSize = 12
     Title.Font = Enum.Font.GothamBold
     Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -180,7 +137,7 @@ local function buildInterfaceV6()
     local CloseBtn = Instance.new("TextButton")
     CloseBtn.Size = UDim2.new(0, 28, 0, 28)
     CloseBtn.Position = UDim2.new(1, -34, 0, 7)
-    CloseBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 50)
+    CloseBtn.BackgroundColor3 = Color3.fromRGB(35, 42, 58)
     CloseBtn.Text = "✕"
     CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     CloseBtn.TextSize = 11
@@ -216,105 +173,70 @@ local function buildInterfaceV6()
         end
     end)
 
-    -- Container Esquerdo (Ações)
-    local LeftPane = Instance.new("Frame")
-    LeftPane.Size = UDim2.new(0, 220, 1, -54)
-    LeftPane.Position = UDim2.new(0, 12, 0, 48)
-    LeftPane.BackgroundTransparency = 1
-    LeftPane.Parent = Window
+    -- Corpo
+    local Body = Instance.new("Frame")
+    Body.Size = UDim2.new(1, -24, 1, -54)
+    Body.Position = UDim2.new(0, 12, 0, 48)
+    Body.BackgroundTransparency = 1
+    Body.Parent = Window
 
-    local lpLayout = Instance.new("UIListLayout")
-    lpLayout.Padding = UDim.new(0, 6)
-    lpLayout.Parent = LeftPane
+    -- Bloco de Ação Principal
+    local BigActionBtn = Instance.new("TextButton")
+    BigActionBtn.Size = UDim2.new(1, 0, 0, 48)
+    BigActionBtn.BackgroundColor3 = Color3.fromRGB(230, 45, 60)
+    BigActionBtn.Text = "⚡ FORÇAR TODOS OS ITENS & EQUIPAR TUDO"
+    BigActionBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    BigActionBtn.TextSize = 12
+    BigActionBtn.Font = Enum.Font.GothamBold
+    BigActionBtn.BorderSizePixel = 0
+    BigActionBtn.Parent = Body
 
-    local function createActionBtn(text, color, callback)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, 0, 0, 36)
-        btn.BackgroundColor3 = color
-        btn.Text = text
-        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        btn.TextSize = 10
-        btn.Font = Enum.Font.GothamBold
-        btn.BorderSizePixel = 0
-        btn.Parent = LeftPane
+    local babCorner = Instance.new("UICorner")
+    babCorner.CornerRadius = UDim.new(0, 8)
+    babCorner.Parent = BigActionBtn
 
-        local c = Instance.new("UICorner")
-        c.CornerRadius = UDim.new(0, 7)
-        c.Parent = btn
+    -- Painel de Estatísticas
+    local StatBox = Instance.new("Frame")
+    StatBox.Size = UDim2.new(1, 0, 0, 52)
+    StatBox.Position = UDim2.new(0, 0, 0, 54)
+    StatBox.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
+    StatBox.BorderSizePixel = 0
+    StatBox.Parent = Body
 
-        btn.MouseButton1Click:Connect(callback)
-        return btn
-    end
+    local sbCorner = Instance.new("UICorner")
+    sbCorner.CornerRadius = UDim.new(0, 8)
+    sbCorner.Parent = StatBox
 
-    -- Container Direito (Console e Injetor Manual)
-    local RightPane = Instance.new("Frame")
-    RightPane.Size = UDim2.new(1, -250, 1, -54)
-    RightPane.Position = UDim2.new(0, 238, 0, 48)
-    RightPane.BackgroundTransparency = 1
-    RightPane.Parent = Window
+    local StatusTxt = Instance.new("TextLabel")
+    StatusTxt.Size = UDim2.new(1, -20, 0, 18)
+    StatusTxt.Position = UDim2.new(0, 10, 0, 6)
+    StatusTxt.BackgroundTransparency = 1
+    StatusTxt.Text = "Status: Pronto para forçar itens."
+    StatusTxt.TextColor3 = Color3.fromRGB(180, 190, 215)
+    StatusTxt.TextSize = 11
+    StatusTxt.Font = Enum.Font.GothamMedium
+    StatusTxt.TextXAlignment = Enum.TextXAlignment.Left
+    StatusTxt.Parent = StatBox
 
-    -- Caixa de Injeção Manual de ID
-    local ManualBox = Instance.new("Frame")
-    ManualBox.Size = UDim2.new(1, 0, 0, 64)
-    ManualBox.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
-    ManualBox.BorderSizePixel = 0
-    ManualBox.Parent = RightPane
+    local ItemCountTxt = Instance.new("TextLabel")
+    ItemCountTxt.Size = UDim2.new(1, -20, 0, 20)
+    ItemCountTxt.Position = UDim2.new(0, 10, 0, 26)
+    ItemCountTxt.BackgroundTransparency = 1
+    ItemCountTxt.Text = "Itens no mapa: 0  |  Itens na Mochila: 0"
+    ItemCountTxt.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ItemCountTxt.TextSize = 12
+    ItemCountTxt.Font = Enum.Font.GothamBold
+    ItemCountTxt.TextXAlignment = Enum.TextXAlignment.Left
+    ItemCountTxt.Parent = StatBox
 
-    local mbCorner = Instance.new("UICorner")
-    mbCorner.CornerRadius = UDim.new(0, 8)
-    mbCorner.Parent = ManualBox
-
-    local mTitle = Instance.new("TextLabel")
-    mTitle.Size = UDim2.new(1, -12, 0, 16)
-    mTitle.Position = UDim2.new(0, 8, 0, 6)
-    mTitle.BackgroundTransparency = 1
-    mTitle.Text = "🎯 FORÇAR BADGE ESPECÍFICA (COLE O ID AQUI):"
-    mTitle.TextColor3 = Color3.fromRGB(0, 255, 180)
-    mTitle.TextSize = 9
-    mTitle.Font = Enum.Font.GothamBold
-    mTitle.TextXAlignment = Enum.TextXAlignment.Left
-    mTitle.Parent = ManualBox
-
-    local IdInput = Instance.new("TextBox")
-    IdInput.Size = UDim2.new(0.68, 0, 0, 28)
-    IdInput.Position = UDim2.new(0, 8, 0, 26)
-    IdInput.BackgroundColor3 = Color3.fromRGB(26, 32, 46)
-    IdInput.PlaceholderText = "Ex: 2124567890..."
-    IdInput.PlaceholderColor3 = Color3.fromRGB(130, 140, 160)
-    IdInput.Text = ""
-    IdInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-    IdInput.TextSize = 11
-    IdInput.Font = Enum.Font.Gotham
-    IdInput.BorderSizePixel = 0
-    IdInput.Parent = ManualBox
-
-    local iiCorner = Instance.new("UICorner")
-    iiCorner.CornerRadius = UDim.new(0, 6)
-    iiCorner.Parent = IdInput
-
-    local FireIdBtn = Instance.new("TextButton")
-    FireIdBtn.Size = UDim2.new(0.26, 0, 0, 28)
-    FireIdBtn.Position = UDim2.new(0.72, 0, 0, 26)
-    FireIdBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 120)
-    FireIdBtn.Text = "FORÇAR"
-    FireIdBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    FireIdBtn.TextSize = 10
-    FireIdBtn.Font = Enum.Font.GothamBold
-    FireIdBtn.BorderSizePixel = 0
-    FireIdBtn.Parent = ManualBox
-
-    local fibCorner = Instance.new("UICorner")
-    fibCorner.CornerRadius = UDim.new(0, 6)
-    fibCorner.Parent = FireIdBtn
-
-    -- Console de Diagnóstico
+    -- Console de Logs
     local Console = Instance.new("ScrollingFrame")
-    Console.Size = UDim2.new(1, 0, 1, -74)
-    Console.Position = UDim2.new(0, 0, 0, 72)
-    Console.BackgroundColor3 = Color3.fromRGB(8, 10, 15)
+    Console.Size = UDim2.new(1, 0, 0, 160)
+    Console.Position = UDim2.new(0, 0, 0, 112)
+    Console.BackgroundColor3 = Color3.fromRGB(10, 12, 17)
     Console.BorderSizePixel = 0
     Console.ScrollBarThickness = 4
-    Console.Parent = RightPane
+    Console.Parent = Body
 
     local cCorner = Instance.new("UICorner")
     cCorner.CornerRadius = UDim.new(0, 8)
@@ -329,7 +251,7 @@ local function buildInterfaceV6()
         l.Size = UDim2.new(1, -10, 0, 16)
         l.BackgroundTransparency = 1
         l.Text = string.format("[%s] %s", os.date("%H:%M:%S"), msg)
-        l.TextColor3 = color or Color3.fromRGB(190, 195, 210)
+        l.TextColor3 = color or Color3.fromRGB(195, 200, 220)
         l.TextSize = 9
         l.Font = Enum.Font.Code
         l.TextXAlignment = Enum.TextXAlignment.Left
@@ -339,212 +261,269 @@ local function buildInterfaceV6()
         Console.CanvasSize = UDim2.new(0, 0, 0, cLayout.AbsoluteContentSize.Y + 10)
     end
 
+    -- Botões de Ações Específicas
+    local SubBtnContainer = Instance.new("Frame")
+    SubBtnContainer.Size = UDim2.new(1, 0, 0, 46)
+    SubBtnContainer.Position = UDim2.new(0, 0, 0, 278)
+    SubBtnContainer.BackgroundTransparency = 1
+    SubBtnContainer.Parent = Body
+
+    local function createSubBtn(text, pos, width, callback)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(width, -4, 1, 0)
+        b.Position = pos
+        b.BackgroundColor3 = Color3.fromRGB(30, 36, 50)
+        b.Text = text
+        b.TextColor3 = Color3.fromRGB(240, 240, 250)
+        b.TextSize = 10
+        b.Font = Enum.Font.GothamBold
+        b.BorderSizePixel = 0
+        b.Parent = SubBtnContainer
+
+        local bc = Instance.new("UICorner")
+        bc.CornerRadius = UDim.new(0, 6)
+        bc.Parent = b
+
+        b.MouseButton1Click:Connect(callback)
+        return b
+    end
+
     Screen.Parent = parentGui
 
     return {
         Log = printLog,
-        CreateBtn = createActionBtn,
-        IdInput = IdInput,
-        FireIdBtn = FireIdBtn
+        Status = StatusTxt,
+        ItemCount = ItemCountTxt,
+        BigBtn = BigActionBtn,
+        CreateSub = createSubBtn
     }
 end
 
-local UI = buildInterfaceV6()
-UI.Log("Badge Master V6 inicializado com sucesso.", Color3.fromRGB(0, 255, 180))
+local UI = buildInterfaceV7()
+UI.Log("Badge Master V7 inicializado (Foco em Itens & Ferramentas).", Color3.fromRGB(0, 255, 180))
 
--- Carrega Badges da API em background
+-- Atualizador periódico de itens
 task.spawn(function()
-    local b = fetchApiBadges()
-    UI.Log(string.format("API da Roblox: %d badges cadastradas no jogo.", #b), Color3.fromRGB(0, 220, 255))
+    while true do
+        local worldTools = 0
+        for _, o in ipairs(workspace:GetDescendants()) do
+            if o:IsA("Tool") and not o:IsDescendantOf(Character) then
+                worldTools = worldTools + 1
+            end
+        end
+
+        local bpTools = #Backpack:GetChildren()
+        if Character then
+            for _, o in ipairs(Character:GetChildren()) do
+                if o:IsA("Tool") then bpTools = bpTools + 1 end
+            end
+        end
+
+        UI.ItemCount.Text = string.format("Itens no mapa: %d  |  Seus itens: %d", worldTools, bpTools)
+        task.wait(2)
+    end
 end)
 
 -- ---------------------------------------------------------------------------------
--- MÉTODO 1: INVASÃO DE SINAIS LUA ('getconnections' DIRETO NOS SCRIPTS)
+-- MÉTODO 1: VÁCUO GERAL DE ITENS DO WORKSPACE (ITEM MAGNET)
 -- ---------------------------------------------------------------------------------
-local function triggerSignalBypass()
-    UI.Log(">>> [MÉTODO 1] Disparando conexões de script via getconnections...", Color3.fromRGB(255, 215, 0))
-    if not getconnections then
-        UI.Log("Seu executor não possui getconnections(). Pulando para simulação física.", Color3.fromRGB(255, 120, 120))
-        return
-    end
-
+local function vacuumWorkspaceTools()
+    UI.Log(">>> [PASSO 1] Puxando e pegando todas as Tools do mapa...", Color3.fromRGB(255, 200, 0))
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     local root = char:WaitForChild("HumanoidRootPart", 5)
-    local triggered = 0
+    local hum = char:WaitForChild("Humanoid", 5)
 
-    task.spawn(function()
-        for _, part in ipairs(workspace:GetDescendants()) do
-            if part:IsA("BasePart") then
-                pcall(function()
-                    for _, conn in ipairs(getconnections(part.Touched)) do
-                        conn:Fire(root)
-                        triggered = triggered + 1
-                    end
-                end)
-            end
-        end
-        UI.Log(string.format("[MÉTODO 1] %d sinais de .Touched disparados no código do jogo!", triggered), Color3.fromRGB(0, 255, 120))
-    end)
-end
-
--- ---------------------------------------------------------------------------------
--- MÉTODO 2: AUTO-CLAIMER DE MENUS & GUIs DE CONQUISTA
--- ---------------------------------------------------------------------------------
-local function claimAllGuiRewards()
-    UI.Log(">>> [MÉTODO 2] Varrendo PlayerGui em busca de botões de Conquistas/Claim...", Color3.fromRGB(255, 215, 0))
-    local claimed = 0
-    local keywords = {"claim", "resgatar", "coletar", "reward", "badge", "conquista", "achievement", "pegar", "free"}
-
-    task.spawn(function()
-        for _, gui in ipairs(LocalPlayer:WaitForChild("PlayerGui"):GetDescendants()) do
-            if gui:IsA("TextButton") or gui:IsA("ImageButton") then
-                local n = gui.Name:lower()
-                local t = (gui:IsA("TextButton") and gui.Text or ""):lower()
-
-                local isMatch = false
-                for _, kw in ipairs(keywords) do
-                    if n:find(kw) or t:find(kw) then
-                        isMatch = true
-                        break
-                    end
-                end
-
-                if isMatch then
-                    pcall(function()
-                        if firesignal then
-                            firesignal(gui.MouseButton1Click)
-                            firesignal(gui.Activated)
-                        else
-                            gui.Visible = true
-                        end
-                        claimed = claimed + 1
-                    end)
-                    task.wait(0.01)
-                end
-            end
-        end
-        UI.Log(string.format("[MÉTODO 2] %d botões de recompensa/conquista acionados nas telas!", claimed), Color3.fromRGB(0, 255, 120))
-    end)
-end
-
--- ---------------------------------------------------------------------------------
--- MÉTODO 3: TELEPORTE FÍSICO COM PERMANÊNCIA (STEP-DWELL)
--- ---------------------------------------------------------------------------------
-local function stepDwellPhysical()
-    UI.Log(">>> [MÉTODO 3] Iniciando pisada com permanência (Step-Dwell)...", Color3.fromRGB(255, 215, 0))
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local root = char:WaitForChild("HumanoidRootPart", 5)
-
-    local pads = {}
-    for _, o in ipairs(workspace:GetDescendants()) do
-        if o:IsA("TouchTransmitter") and o.Parent and o.Parent:IsA("BasePart") then
-            table.insert(pads, o.Parent)
-        elseif o:IsA("BasePart") then
-            local n = o.Name:lower()
-            if n:find("badge") or n:find("giver") or n:find("emblema") or n:find("pad") or n:find("trophy") then
-                table.insert(pads, o)
-            end
+    local toolsFound = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Tool") and not obj:IsDescendantOf(char) then
+            table.insert(toolsFound, obj)
         end
     end
 
-    UI.Log(string.format("Localizados %d blocos físicos no mapa.", #pads), Color3.fromRGB(255, 255, 255))
-    if #pads == 0 then return end
+    UI.Log(string.format("Encontradas %d Tools espalhadas no mapa.", #toolsFound), Color3.fromRGB(255, 255, 255))
+    if #toolsFound == 0 then return end
 
-    task.spawn(function()
-        local orig = root.CFrame
-        for i, pad in ipairs(pads) do
-            if not char or not char.Parent then break end
+    local origPos = root.CFrame
+    local collected = 0
 
-            pcall(function()
-                -- Fica exatamente em cima da peça e espera 0.15s para o servidor checar
-                root.CFrame = pad.CFrame + Vector3.new(0, 1.5, 0)
-                root.AssemblyLinearVelocity = Vector3.new(0, -3, 0)
+    for _, tool in ipairs(toolsFound) do
+        if not char or not char.Parent then break end
+
+        pcall(function()
+            local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart")
+            if handle then
+                -- 1. Teleporta o personagem em cima do item
+                root.CFrame = handle.CFrame + Vector3.new(0, 1, 0)
                 
+                -- 2. Aciona o toque direto
                 if firetouchinterest then
-                    firetouchinterest(root, pad, 0)
-                    task.wait(0.02)
-                    firetouchinterest(root, pad, 1)
+                    firetouchinterest(root, handle, 0)
+                    task.wait(0.01)
+                    firetouchinterest(root, handle, 1)
                 end
-            end)
-            task.wait(0.12) -- Dwell time para validação de servidor
-        end
-        root.CFrame = orig
-        UI.Log("[MÉTODO 3] Todos os blocos foram pisados com permanência.", Color3.fromRGB(0, 255, 120))
-    end)
+
+                -- 3. Tenta forçar via Humanoid
+                hum:EquipTool(tool)
+            end
+
+            -- 4. Tenta transferir o parent direto
+            tool.Parent = Backpack
+            collected = collected + 1
+        end)
+        task.wait(0.05)
+    end
+
+    root.CFrame = origPos
+    UI.Log(string.format("[PASSO 1 Concluído] %d itens processados no mapa.", collected), Color3.fromRGB(0, 255, 120))
 end
 
 -- ---------------------------------------------------------------------------------
--- MÉTODO 4: FORÇAR BADGE ESPECÍFICA (TODOS OS FORMATOS DE REMOTES)
+-- MÉTODO 2: FORÇAR ITENS GUARDADOS EM REPLICATEDSTORAGE
 -- ---------------------------------------------------------------------------------
-local function forceSpecificBadge(badgeId)
-    local idNum = tonumber(badgeId)
-    if not idNum then
-        UI.Log("Por favor, digite um número de Badge ID válido!", Color3.fromRGB(255, 100, 100))
+local function forceReplicatedStorageTools()
+    UI.Log(">>> [PASSO 2] Buscando itens em ReplicatedStorage...", Color3.fromRGB(255, 200, 0))
+    local count = 0
+
+    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("Tool") then
+            pcall(function()
+                local clone = obj:Clone()
+                clone.Parent = Backpack
+                count = count + 1
+            end)
+        end
+    end
+
+    -- Dispara remotes comuns de entrega de itens
+    local remKeywords = {"item", "tool", "weapon", "gear", "give", "equip", "inventory", "claim"}
+    for _, rem in ipairs(ReplicatedStorage:GetDescendants()) do
+        if rem:IsA("RemoteEvent") or rem:IsA("RemoteFunction") then
+            local n = rem.Name:lower()
+            for _, kw in ipairs(remKeywords) do
+                if n:find(kw) then
+                    pcall(function()
+                        if rem:IsA("RemoteEvent") then
+                            rem:FireServer()
+                            rem:FireServer("All")
+                            rem:FireServer("Get")
+                        elseif rem:IsA("RemoteFunction") then
+                            rem:InvokeServer()
+                        end
+                    end)
+                    break
+                end
+            end
+        end
+    end
+
+    UI.Log(string.format("[PASSO 2 Concluído] %d itens clonados de ReplicatedStorage.", count), Color3.fromRGB(0, 255, 120))
+end
+
+-- ---------------------------------------------------------------------------------
+-- MÉTODO 3: PROXIMITY PROMPTS DE ITENS E MOSTRIÁRIOS
+-- ---------------------------------------------------------------------------------
+local function forceItemPrompts()
+    UI.Log(">>> [PASSO 3] Forçando botões de pegar itens (ProximityPrompts)...", Color3.fromRGB(255, 200, 0))
+    local pCount = 0
+    for _, prompt in ipairs(workspace:GetDescendants()) do
+        if prompt:IsA("ProximityPrompt") then
+            pcall(function()
+                prompt.HoldDuration = 0
+                if fireproximityprompt then
+                    fireproximityprompt(prompt)
+                    pCount = pCount + 1
+                end
+            end)
+        elseif prompt:IsA("ClickDetector") then
+            pcall(function()
+                if fireclickdetector then
+                    fireclickdetector(prompt)
+                    pCount = pCount + 1
+                end
+            end)
+        end
+    end
+    UI.Log(string.format("[PASSO 3 Concluído] %d interações de itens acionadas.", pCount), Color3.fromRGB(0, 255, 120))
+end
+
+-- ---------------------------------------------------------------------------------
+-- MÉTODO 4: AUTO-EQUIP & ATIVAÇÃO EM MASSA DE TODOS OS SEUS ITENS
+-- ---------------------------------------------------------------------------------
+local function equipAndActivateAllTools()
+    UI.Log(">>> [PASSO 4] Equipando e Ativando TODOS os itens na mão...", Color3.fromRGB(255, 200, 0))
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local hum = char:WaitForChild("Humanoid", 5)
+
+    local tools = {}
+    for _, t in ipairs(Backpack:GetChildren()) do
+        if t:IsA("Tool") then table.insert(tools, t) end
+    end
+
+    UI.Log(string.format("Você possui %d itens na mochila para equipar.", #tools), Color3.fromRGB(255, 255, 255))
+    if #tools == 0 then
+        UI.Log("Mochila vazia! Certifique-se de executar o Vácuo de Itens primeiro.", Color3.fromRGB(255, 120, 120))
         return
     end
 
-    UI.Log(string.format(">>> INJETANDO FORÇADAMENTE A BADGE: %d...", idNum), Color3.fromRGB(0, 255, 255))
+    local activatedCount = 0
+    for _, tool in ipairs(tools) do
+        if not char or not char.Parent then break end
 
-    task.spawn(function()
-        local count = 0
-        for _, rem in ipairs(game:GetDescendants()) do
-            if rem:IsA("RemoteEvent") or rem:IsA("RemoteFunction") then
-                pcall(function()
-                    if rem:IsA("RemoteEvent") then
-                        rem:FireServer(idNum)
-                        rem:FireServer(tostring(idNum))
-                        rem:FireServer("AwardBadge", idNum)
-                        rem:FireServer("Badge", idNum)
-                        rem:FireServer({BadgeId = idNum})
-                        rem:FireServer({Id = idNum})
-                        rem:FireServer({id = idNum})
-                        count = count + 7
-                    elseif rem:IsA("RemoteFunction") then
-                        rem:InvokeServer(idNum)
-                        rem:InvokeServer({BadgeId = idNum})
-                        count = count + 2
-                    end
-                end)
-            end
-        end
-        UI.Log(string.format("Injeção da badge %d concluída com %d disparos!", idNum, count), Color3.fromRGB(0, 255, 120))
-    end)
+        pcall(function()
+            -- 1. Equipa na mão
+            tool.Parent = char
+            task.wait(0.12) -- Tempo de sincronização com o servidor
+
+            -- 2. Ativa o item (dispara Tool.Activated)
+            tool:Activate()
+            activatedCount = activatedCount + 1
+            UI.Log(string.format("Item ativado: '%s'", tool.Name), Color3.fromRGB(150, 255, 150))
+            task.wait(0.08)
+
+            -- 3. Devolve para a mochila para poder equipar o próximo
+            tool.Parent = Backpack
+        end)
+    end
+
+    UI.Log(string.format("[PASSO 4 Concluído] %d itens foram equipados e ativados com sucesso!", activatedCount), Color3.fromRGB(0, 255, 120))
 end
 
 -- ---------------------------------------------------------------------------------
--- VINCULAÇÃO DOS BOTÕES
+-- BOTÕES DA INTERFACE V7
 -- ---------------------------------------------------------------------------------
-UI.CreateBtn("🔥 FORÇAR TUDO (TODAS AS PORTAS)", Color3.fromRGB(220, 40, 50), function()
-    triggerSignalBypass()
-    claimAllGuiRewards()
-    stepDwellPhysical()
-    -- Dispara todas as badges da API nos remotes
-    local bList = fetchApiBadges()
-    for _, b in ipairs(bList) do
-        forceSpecificBadge(b.Id)
-        task.wait(0.01)
-    end
+UI.BigBtn.MouseButton1Click:Connect(function()
+    if State.IsRunning then return end
+    State.IsRunning = true
+    UI.BigBtn.Text = "PROCESSANDO PIPELINE DE ITENS..."
+    UI.BigBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+    UI.Status.Text = "Status: Executando os 4 passos de itens..."
+
+    task.spawn(function()
+        -- Passo 1: Pega todos do chão
+        vacuumWorkspaceTools()
+        task.wait(0.2)
+
+        -- Passo 2: Clona de ReplicatedStorage
+        forceReplicatedStorageTools()
+        task.wait(0.2)
+
+        -- Passo 3: Pega mostruários
+        forceItemPrompts()
+        task.wait(0.3)
+
+        -- Passo 4: Equipa e usa TODOS os itens coletados
+        equipAndActivateAllTools()
+
+        UI.Status.Text = "Status: Todos os itens foram coletados e ativados!"
+        UI.BigBtn.Text = "⚡ FORÇAR TODOS OS ITENS & EQUIPAR TUDO"
+        UI.BigBtn.BackgroundColor3 = Color3.fromRGB(230, 45, 60)
+        State.IsRunning = false
+    end)
 end)
 
-UI.CreateBtn("1. Bypass de Sinais (getconnections)", Color3.fromRGB(28, 36, 52), triggerSignalBypass)
-UI.CreateBtn("2. Auto-Claim Menus e Conquistas", Color3.fromRGB(28, 36, 52), claimAllGuiRewards)
-UI.CreateBtn("3. Pisar Físico com Espera (Dwell)", Color3.fromRGB(28, 36, 52), stepDwellPhysical)
-UI.CreateBtn("4. Destruir ProximityPrompts (E)", Color3.fromRGB(28, 36, 52), function()
-    local c = 0
-    for _, p in ipairs(workspace:GetDescendants()) do
-        if p:IsA("ProximityPrompt") then
-            pcall(function()
-                p.HoldDuration = 0
-                if fireproximityprompt then fireproximityprompt(p) end
-                c = c + 1
-            end)
-        end
-    end
-    UI.Log(string.format("%d Prompts de proximidade destruídos!", c), Color3.fromRGB(0, 255, 120))
-end)
+UI.CreateSub("1. Puxar do Mapa", UDim2.new(0, 0, 0, 0), 0.25, vacuumWorkspaceTools)
+UI.CreateSub("2. Replicated Items", UDim2.new(0.25, 0, 0, 0), 0.25, forceReplicatedStorageTools)
+UI.CreateSub("3. Puxar Prompts", UDim2.new(0.5, 0, 0, 0), 0.25, forceItemPrompts)
+UI.CreateSub("4. Equipar Mochila", UDim2.new(0.75, 0, 0, 0), 0.25, equipAndActivateAllTools)
 
-UI.FireIdBtn.MouseButton1Click:Connect(function()
-    forceSpecificBadge(UI.IdInput.Text)
-end)
-
-print("[BadgeMaster V6] Carregado com sucesso.")
+print("[BadgeMaster V7] Pronto.")
