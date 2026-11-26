@@ -2892,7 +2892,7 @@ end))
 -- ════════════════════════════════════════════════════════════════════════════════
 -- INTERFACE GRÁFICA V13.0 — 12 ABAS, STUDIO EDITOR, CONSOLE ADMIN & HUD 8.0
 -- ════════════════════════════════════════════════════════════════════════════════
-(function()
+;(function()
     local playerGui = player:WaitForChild("PlayerGui")
     for _, nm in ipairs({"SuiteAstralV13Gui", "SuiteAstralV12Gui", "SuiteAstralV11Gui", "SuiteAstralV10Gui", "ColisaoV90Gui"}) do
         local old = playerGui:FindFirstChild(nm)
@@ -3187,7 +3187,7 @@ end))
     end
 
     -- BLOCO 1: JANELA PRINCIPAL (950x620) + 12 ABAS
-    (function()
+    ;(function()
         local main = Instance.new("Frame", screenGui)
         main.Name = "MainFrame" main.Size = UDim2.new(0, 950, 0, 620)
         main.Position = UDim2.new(0.5, -475, 0.5, -310)
@@ -3302,7 +3302,7 @@ end))
     end)()
 
     -- BLOCO 2: ABA 1 - MOBILIDADE & MACRO PRO
-    (function()
+    ;(function()
         local t1 = UI.tabFrames[1]
         UI.mkSection(t1, "Modos Principais")
         local g1 = UI.mkGrid(t1)
@@ -3370,7 +3370,7 @@ end))
     end)()
 
     -- BLOCO 3: ABA 2 - COMBATE, AUTO-PARRY & KILL-FEED
-    (function()
+    ;(function()
         local t2 = UI.tabFrames[2]
         UI.mkSection(t2, "Assistência de Mira & Combate")
         local g1 = UI.mkGrid(t2)
@@ -3433,7 +3433,7 @@ end))
     end)()
 
     -- BLOCO 4: ABA 3 - VISÃO, OFF-SCREEN ARROWS & WORLD ESP
-    (function()
+    ;(function()
         local t3 = UI.tabFrames[3]
         UI.mkSection(t3, "ESP Pro, Skeleton, Setas & World ESP")
         local g1 = UI.mkGrid(t3)
@@ -3488,7 +3488,7 @@ end))
     end)()
 
     -- BLOCO 5: ABA 4 - MUNDO, BUILDER & GERADOR DE ESTRUTURAS
-    (function()
+    ;(function()
         local t4 = UI.tabFrames[4]
         UI.mkSection(t4, "Part Spawner & Gerador de Estruturas 3D")
         local g1 = UI.mkGrid(t4)
@@ -3527,7 +3527,7 @@ end))
     end)()
 
     -- BLOCO 6: ABA 5 - STUDIO PROPERTY EDITOR (IN-GAME)
-    (function()
+    ;(function()
         local t5 = UI.tabFrames[5]
         UI.mkSection(t5, "Selecionar & Editar Objeto ao Vivo")
         local infoLbl = Instance.new("TextLabel", t5)
@@ -3562,7 +3562,7 @@ end))
     end)()
 
     -- BLOCO 7: ABA 6 - AUTOMAÇÃO, UTILITÁRIOS & WAYPOINTS
-    (function()
+    ;(function()
         local t6 = UI.tabFrames[6]
         UI.mkSection(t6, "Automação & Farm")
         local g1 = UI.mkGrid(t6)
@@ -3671,7 +3671,7 @@ end))
     end)()
 
     -- BLOCO 8: ABA 7 - AVATAR & EMOTES
-    (function()
+    ;(function()
         local t7 = UI.tabFrames[7]
         UI.mkSection(t7, "Efeitos & Aparência (Client-Side)")
         local g1 = UI.mkGrid(t7)
@@ -3710,7 +3710,7 @@ end))
     end)()
 
     -- BLOCO 9: ABA 8 - REDE, TREE EXPLORER, REMOTE SCANNER & SOUND SPY
-    (function()
+    ;(function()
         local t8 = UI.tabFrames[8]
         UI.mkSection(t8, "Ações de Servidor")
         local g1 = UI.mkGrid(t8)
@@ -3855,7 +3855,7 @@ end))
     end)()
 
     -- BLOCO 10: ABA 9 - CONSOLE DE COMANDOS ADMIN (;)
-    (function()
+    ;(function()
         local t9 = UI.tabFrames[9]
         UI.mkSection(t9, "Console Admin (Atalho [;] • Digite 'help' para listar comandos)")
         local cmdBar = Instance.new("Frame", t9)
@@ -3889,7 +3889,7 @@ end))
     end)()
 
     -- BLOCO 11: ABA 10 - JOGADORES
-    (function()
+    ;(function()
         local t10 = UI.tabFrames[10]
         local topPl = Instance.new("Frame", t10)
         topPl.Size = UDim2.new(1, -12, 0, 36) topPl.BackgroundTransparency = 1
@@ -3990,7 +3990,7 @@ end))
     end)()
 
     -- BLOCO 12: ABA 11 - DEFESAS BLINDADAS (11 ESCUDOS)
-    (function()
+    ;(function()
         local t11 = UI.tabFrames[11]
         UI.mkSection(t11, "Controle Mestre de Blindagem")
         local gM      = UI.mkGrid(t11)
@@ -4032,7 +4032,7 @@ end))
     end)()
 
     -- BLOCO 13: ABA 12 - CONFIGURAÇÕES, 12 TEMAS, NOTIFICATION CENTER & TECLAS
-    (function()
+    ;(function()
         local t12 = UI.tabFrames[12]
         UI.mkSection(t12, "12 Temas Neon & Chroma Rainbow")
         local themeCard = Instance.new("Frame", t12)
@@ -4150,7 +4150,7 @@ end))
     end)()
 
     -- BLOCO 14: MODAL SPAWNS, INSPECTOR 3D & MINI-HUD 8.0
-    (function()
+    ;(function()
         local spFrame = Instance.new("Frame", screenGui)
         spFrame.Size = UDim2.new(0, 340, 0, 320) spFrame.Position = UDim2.new(0.5, -170, 0.5, -160)
         spFrame.BackgroundColor3 = Color3.fromRGB(12, 15, 24) spFrame.BorderSizePixel = 0
@@ -5429,7 +5429,7 @@ trackConn(RunService.Heartbeat:Connect(function(dt)
 end))
 
 -- CONSTRUÇÃO DA UI DE EXPANSÃO (BARRAS CINEMA + SEÇÕES EM MOVER, VISÃO, AVATAR, REDE)
-(function()
+;(function()
     if not UI.screenGui then
         return
     end
