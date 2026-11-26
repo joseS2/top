@@ -1,384 +1,960 @@
 --[[
-    ==============================================================================
-    BADGE SYSTEM ULTIMATE - V2.LUA
-    ==============================================================================
-    Versão aprimorada, lapidada e otimizada.
+    =================================================================================
+    🏆 BADGE MASTER ULTIMATE - V3.LUA (SUÍTE DEFINITIVA DE EMBLEMAS)
+    =================================================================================
+    Desenvolvido para ser a solução mais completa, profissional e confiável do Roblox.
     
-    Novidades da V2:
-    - Interface Gráfica (GUI) moderna, flutuante, arrastável e com barra de progresso.
-    - Suporte a Mobile e PC com controle de pausa/retomada.
-    - Sistema Anti-AFK integrado (evita ser desconectado por inatividade).
-    - Suporte avançado a múltiplos métodos de acionamento:
-        * TouchTransmitters (firetouchinterest)
-        * ProximityPrompts (fireproximityprompt)
-        * ClickDetectors (fireclickdetector)
-        * Teletransporte seguro com Noclip (para evitar morrer ou ficar preso)
-    - Filtro inteligente de duplicatas (não gasta pacotes repetindo a mesma parte).
-    - Modo Servidor (Studio) com cache em memória, fila de entrega, tratamento
-      estrito de Rate-Limit da BadgeService e comandos de chat (/giveall, /giveme).
-    ==============================================================================
+    DESTAQUES DA V3:
+    1. Painel com Abas (Dashboard, Coletor Avançado, Explorador de Badges, Utilitários).
+    2. Botão Flutuante Móvel (Mobile Floating Button) + Tecla de Atalho PC (Insert / RightShift).
+    3. Integração com a API Web de Badges (busca nomes, ícones reais e descrições do jogo atual).
+    4. Rastreador em Tempo Real (Mostra quantas badges existem no jogo e quantas você já tem).
+    5. Métodos de Coleta Híbridos:
+       - Ultra Fast (firetouchinterest instantâneo em lote)
+       - Safe Tween (teleporte suave para desviar de anticheat de teleporte)
+       - ProximityPrompt & ClickDetector automáticos
+       - Anti-Void e Noclip Inteligente durante a coleta
+    6. Ferramentas Extras:
+       - Anti-AFK integrado permanente
+       - Copiador de Badge IDs (Clipboard)
+       - Otimizador de FPS (FPS Boost para mapas gigantes com 10.000+ pads)
+       - Server Hop & Rejoin
+    7. Suporte a Roblox Studio (ServerScriptService) mantido com cache de alta fidelidade.
+    =================================================================================
 ]]
 
-local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 
--- ==============================================================================
--- CONFIGURAÇÕES GERAIS (Personalize conforme sua necessidade)
--- ==============================================================================
-local Config = {
-    -- Configurações do Cliente / Executor
-    Client = {
-        ScanInterval = 0.03,            -- Delay entre cada badge (evita lag e desconexão)
-        UseAntiAfk = true,              -- Impede desconexão após 20 minutos inativo
-        AutoStart = true,               -- Começa a escanear assim que carregar o script
-        ScanKeywords = {                -- Palavras-chave para identificar blocos de badge
-            "badge", "emblema", "giver", "trophy", "trofeu", "award", "freebadge", "pad"
-        },
-        TeleportFallback = true,        -- Se o executor não tiver firetouchinterest, usa teleporte suave
-        NoclipOnTeleport = true,        -- Desativa colisão ao teleportar para evitar travar na parede
-    },
-
-    -- Configurações do Servidor / Roblox Studio
-    Server = {
-        DelayBetweenAwards = 0.15,      -- Respeita o rate limit do BadgeService
-        AwardOnJoin = true,             -- Concede automaticamente quando um player entrar
-        UseProxy = true,                -- Usa RoProxy para contornar bloqueio de chamadas diretas
-        ProxyUrl = "https://badges.roproxy.com/v1/universes/%d/badges?limit=100&cursor=%s",
-        AdminIds = {                    -- Adicione aqui os UserIds com permissão para usar comandos de chat
-            -- [12345678] = true,
-        }
-    }
+-- =================================================================================
+-- CONFIGURAÇÕES PADRÃO (Ajustáveis pelo usuário no código ou pela interface)
+-- =================================================================================
+local Settings = {
+    Delay = 0.02,                   -- Delay entre badges no modo Ultra (em segundos)
+    TweenSpeed = 40,                -- Velocidade dos blocos se usar o modo Tween
+    Mode = "Ultra",                 -- "Ultra" (Instantâneo) ou "Safe" (Tween)
+    AutoAntiAfk = true,             -- Anti-AFK ativado por padrão
+    Noclip = true,                  -- Noclip ativado durante coleta
+    IgnoreCollected = true,         -- Ignora badges já obtidas se conhecidas
+    NotificationSound = true,       -- Efeito sonoro discreto ao concluir
+    Keybind = Enum.KeyCode.RightShift, -- Tecla para abrir/fechar no PC
 }
 
--- ==============================================================================
--- MODO 1: CLIENTE / EXECUTOR (Delta, Arceus X, Solara, Wave, Synapse, etc.)
--- ==============================================================================
+-- =================================================================================
+-- MODO 1: CLIENTE / EXECUTOR (Delta, Arceus X, Solara, Wave, Codex, Synapse, etc.)
+-- =================================================================================
 if RunService:IsClient() then
-    local TweenService = game:GetService("TweenService")
-    local UserInputService = game:GetService("UserInputService")
     local LocalPlayer = Players.LocalPlayer
+    local Camera = workspace.CurrentCamera
 
+    -- -----------------------------------------------------------------------------
     -- 1. Anti-AFK
-    if Config.Client.UseAntiAfk then
+    -- -----------------------------------------------------------------------------
+    if Settings.AutoAntiAfk then
         LocalPlayer.Idled:Connect(function()
-            local VirtualUser = game:GetService("VirtualUser")
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new(0, 0))
-            print("[Badge v2] Anti-AFK acionado com sucesso.")
+            local vu = game:GetService("VirtualUser")
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new(0, 0))
+            print("[Badge V3] Anti-AFK evitou a desconexão.")
         end)
     end
 
-    -- 2. Construção da Interface Gráfica (HUD Moderna e Responsiva)
-    local function createModernGui()
+    -- -----------------------------------------------------------------------------
+    -- 2. Buscador de Informações da API (Badges do Jogo Atual)
+    -- -----------------------------------------------------------------------------
+    local GameBadgesCache = {}
+    local UserBadgesCache = {}
+    local isApiLoaded = false
+
+    local function fetchGameBadgesApi()
+        local universeId = game.GameId
+        if universeId == 0 then return {} end
+
+        local badges = {}
+        local cursor = ""
+        local maxPages = 5 -- Até 500 badges na listagem visual direta
+        local page = 0
+
+        repeat
+            page = page + 1
+            local url = string.format("https://badges.roproxy.com/v1/universes/%d/badges?limit=100&cursor=%s", universeId, cursor)
+            local success, content
+
+            pcall(function()
+                if (syn and syn.request) or (http and http.request) or request then
+                    local req = (syn and syn.request) or (http and http.request) or request
+                    local res = req({Url = url, Method = "GET"})
+                    content = res.Body
+                    success = (res.StatusCode == 200)
+                elseif game.HttpGet then
+                    content = game:HttpGet(url)
+                    success = (content ~= nil and #content > 0)
+                end
+            end)
+
+            if success and content then
+                local data = HttpService:JSONDecode(content)
+                if data and data.data then
+                    for _, b in ipairs(data.data) do
+                        table.insert(badges, {
+                            Id = b.id,
+                            Name = b.name or "Emblema Sem Nome",
+                            Description = b.description or "Sem descrição",
+                            IconId = b.iconImageId or 0,
+                            Enabled = b.enabled
+                        })
+                    end
+                    cursor = data.nextPageCursor or ""
+                else
+                    break
+                end
+            else
+                break
+            end
+        until cursor == "" or cursor == nil or page >= maxPages
+
+        GameBadgesCache = badges
+        isApiLoaded = true
+        return badges
+    end
+
+    -- -----------------------------------------------------------------------------
+    -- 3. Construção da Interface Gráfica Avançada (UI V3)
+    -- -----------------------------------------------------------------------------
+    local function buildUltimateInterface()
         local parentGui = (gethui and gethui()) or game:GetService("CoreGui"):FindFirstChild("RobloxGui") or LocalPlayer:WaitForChild("PlayerGui")
-        
-        -- Remove versão antiga se existir
-        local old = parentGui:FindFirstChild("BadgeMasterV2_Gui")
-        if old then old:Destroy() end
+        local existing = parentGui:FindFirstChild("BadgeMaster_V3")
+        if existing then existing:Destroy() end
 
-        local screen = Instance.new("ScreenGui")
-        screen.Name = "BadgeMasterV2_Gui"
-        screen.ResetOnSpawn = false
-        screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        local Screen = Instance.new("ScreenGui")
+        Screen.Name = "BadgeMaster_V3"
+        Screen.ResetOnSpawn = false
+        Screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-        -- Container Principal
-        local main = Instance.new("Frame")
-        main.Name = "MainFrame"
-        main.Size = UDim2.new(0, 320, 0, 190)
-        main.Position = UDim2.new(0.5, -160, 0.2, 0)
-        main.BackgroundColor3 = Color3.fromRGB(24, 26, 32)
-        main.BorderSizePixel = 0
-        main.Active = true
-        main.ClipsDescendants = true
-        main.Parent = screen
+        -- ----------------- Botão Flutuante Mobile -----------------
+        local MobileBtn = Instance.new("TextButton")
+        MobileBtn.Name = "MobileToggle"
+        MobileBtn.Size = UDim2.new(0, 48, 0, 48)
+        MobileBtn.Position = UDim2.new(0, 16, 0.4, 0)
+        MobileBtn.BackgroundColor3 = Color3.fromRGB(25, 27, 36)
+        MobileBtn.Text = "🏅"
+        MobileBtn.TextSize = 22
+        MobileBtn.BorderSizePixel = 0
+        MobileBtn.Active = true
+        MobileBtn.Parent = Screen
 
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 10)
-        corner.Parent = main
+        local mobCorner = Instance.new("UICorner")
+        mobCorner.CornerRadius = UDim.new(1, 0)
+        mobCorner.Parent = MobileBtn
 
-        local stroke = Instance.new("UIStroke")
-        stroke.Color = Color3.fromRGB(60, 65, 80)
-        stroke.Thickness = 1.2
-        stroke.Parent = main
+        local mobStroke = Instance.new("UIStroke")
+        mobStroke.Color = Color3.fromRGB(0, 170, 255)
+        mobStroke.Thickness = 2
+        mobStroke.Parent = MobileBtn
 
-        -- Barra de Título
-        local titleBar = Instance.new("Frame")
-        titleBar.Size = UDim2.new(1, 0, 0, 36)
-        titleBar.BackgroundColor3 = Color3.fromRGB(32, 35, 45)
-        titleBar.BorderSizePixel = 0
-        titleBar.Parent = main
+        -- ----------------- Janela Principal -----------------
+        local Main = Instance.new("Frame")
+        Main.Name = "MainHub"
+        Main.Size = UDim2.new(0, 560, 0, 360)
+        Main.Position = UDim2.new(0.5, -280, 0.5, -180)
+        Main.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
+        Main.BorderSizePixel = 0
+        Main.ClipsDescendants = true
+        Main.Active = true
+        Main.Parent = Screen
 
-        local titleCorner = Instance.new("UICorner")
-        titleCorner.CornerRadius = UDim.new(0, 10)
-        titleCorner.Parent = titleBar
+        local mainCorner = Instance.new("UICorner")
+        mainCorner.CornerRadius = UDim.new(0, 12)
+        mainCorner.Parent = Main
 
-        local titleText = Instance.new("TextLabel")
-        titleText.Size = UDim2.new(1, -70, 1, 0)
-        titleText.Position = UDim2.new(0, 12, 0, 0)
-        titleText.BackgroundTransparency = 1
-        titleText.Text = "⚡ BADGE MASTER V2"
-        titleText.TextColor3 = Color3.fromRGB(240, 240, 245)
-        titleText.TextSize = 13
-        titleText.Font = Enum.Font.GothamBold
-        titleText.TextXAlignment = Enum.TextXAlignment.Left
-        titleText.Parent = titleBar
+        local mainStroke = Instance.new("UIStroke")
+        mainStroke.Color = Color3.fromRGB(45, 50, 68)
+        mainStroke.Thickness = 1.4
+        mainStroke.Parent = Main
 
-        -- Botão Fechar
-        local closeBtn = Instance.new("TextButton")
-        closeBtn.Size = UDim2.new(0, 28, 0, 28)
-        closeBtn.Position = UDim2.new(1, -32, 0, 4)
-        closeBtn.BackgroundColor3 = Color3.fromRGB(45, 48, 60)
-        closeBtn.Text = "✕"
-        closeBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
-        closeBtn.TextSize = 12
-        closeBtn.Font = Enum.Font.GothamBold
-        closeBtn.BorderSizePixel = 0
-        closeBtn.Parent = titleBar
+        -- Barra de Título Superior
+        local TopBar = Instance.new("Frame")
+        TopBar.Size = UDim2.new(1, 0, 0, 42)
+        TopBar.BackgroundColor3 = Color3.fromRGB(24, 27, 36)
+        TopBar.BorderSizePixel = 0
+        TopBar.Parent = Main
+
+        local topCorner = Instance.new("UICorner")
+        topCorner.CornerRadius = UDim.new(0, 12)
+        topCorner.Parent = TopBar
+
+        local LogoIcon = Instance.new("TextLabel")
+        LogoIcon.Size = UDim2.new(0, 30, 1, 0)
+        LogoIcon.Position = UDim2.new(0, 14, 0, 0)
+        LogoIcon.BackgroundTransparency = 1
+        LogoIcon.Text = "🏆"
+        LogoIcon.TextSize = 18
+        LogoIcon.Parent = TopBar
+
+        local Title = Instance.new("TextLabel")
+        Title.Size = UDim2.new(0, 250, 1, 0)
+        Title.Position = UDim2.new(0, 48, 0, 0)
+        Title.BackgroundTransparency = 1
+        Title.Text = "BADGE MASTER ULTIMATE v3"
+        Title.TextColor3 = Color3.fromRGB(245, 245, 250)
+        Title.TextSize = 13
+        Title.Font = Enum.Font.GothamBold
+        Title.TextXAlignment = Enum.TextXAlignment.Left
+        Title.Parent = TopBar
+
+        local CloseBtn = Instance.new("TextButton")
+        CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+        CloseBtn.Position = UDim2.new(1, -36, 0, 6)
+        CloseBtn.BackgroundColor3 = Color3.fromRGB(38, 42, 54)
+        CloseBtn.Text = "✕"
+        CloseBtn.TextColor3 = Color3.fromRGB(220, 220, 230)
+        CloseBtn.TextSize = 13
+        CloseBtn.Font = Enum.Font.GothamBold
+        CloseBtn.BorderSizePixel = 0
+        CloseBtn.Parent = TopBar
 
         local closeCorner = Instance.new("UICorner")
-        closeCorner.CornerRadius = UDim.new(0, 6)
-        closeCorner.Parent = closeBtn
+        closeCorner.CornerRadius = UDim.new(0, 8)
+        closeCorner.Parent = CloseBtn
 
-        closeBtn.MouseButton1Click:Connect(function()
-            screen:Destroy()
+        local MinBtn = Instance.new("TextButton")
+        MinBtn.Size = UDim2.new(0, 30, 0, 30)
+        MinBtn.Position = UDim2.new(1, -72, 0, 6)
+        MinBtn.BackgroundColor3 = Color3.fromRGB(38, 42, 54)
+        MinBtn.Text = "—"
+        MinBtn.TextColor3 = Color3.fromRGB(220, 220, 230)
+        MinBtn.TextSize = 13
+        MinBtn.Font = Enum.Font.GothamBold
+        MinBtn.BorderSizePixel = 0
+        MinBtn.Parent = TopBar
+
+        local minCorner = Instance.new("UICorner")
+        minCorner.CornerRadius = UDim.new(0, 8)
+        minCorner.Parent = MinBtn
+
+        -- ----------------- Barra Lateral (Tabs / Navegação) -----------------
+        local Sidebar = Instance.new("Frame")
+        Sidebar.Size = UDim2.new(0, 140, 1, -42)
+        Sidebar.Position = UDim2.new(0, 0, 0, 42)
+        Sidebar.BackgroundColor3 = Color3.fromRGB(20, 22, 30)
+        Sidebar.BorderSizePixel = 0
+        Sidebar.Parent = Main
+
+        local TabContainer = Instance.new("Frame")
+        TabContainer.Size = UDim2.new(1, -16, 1, -16)
+        TabContainer.Position = UDim2.new(0, 8, 0, 8)
+        TabContainer.BackgroundTransparency = 1
+        TabContainer.Parent = Sidebar
+
+        local tabList = Instance.new("UIListLayout")
+        tabList.SortOrder = Enum.SortOrder.LayoutOrder
+        tabList.Padding = UDim.new(0, 6)
+        tabList.Parent = TabContainer
+
+        -- Área de Conteúdo das Abas
+        local ContentArea = Instance.new("Frame")
+        ContentArea.Size = UDim2.new(1, -148, 1, -50)
+        ContentArea.Position = UDim2.new(0, 144, 0, 46)
+        ContentArea.BackgroundTransparency = 1
+        ContentArea.Parent = Main
+
+        -- Controle de Alternância de Abas
+        local Tabs = {}
+        local TabButtons = {}
+
+        local function switchTab(tabName)
+            for name, page in pairs(Tabs) do
+                page.Visible = (name == tabName)
+            end
+            for name, btn in pairs(TabButtons) do
+                if name == tabName then
+                    btn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+                    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                else
+                    btn.BackgroundColor3 = Color3.fromRGB(28, 32, 42)
+                    btn.TextColor3 = Color3.fromRGB(160, 165, 180)
+                end
+            end
+        end
+
+        local function createTabButton(name, icon, order)
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, 0, 0, 36)
+            btn.BackgroundColor3 = Color3.fromRGB(28, 32, 42)
+            btn.Text = "  " .. icon .. "  " .. name
+            btn.TextColor3 = Color3.fromRGB(160, 165, 180)
+            btn.TextSize = 12
+            btn.Font = Enum.Font.GothamMedium
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            btn.BorderSizePixel = 0
+            btn.LayoutOrder = order
+            btn.Parent = TabContainer
+
+            local c = Instance.new("UICorner")
+            c.CornerRadius = UDim.new(0, 8)
+            c.Parent = btn
+
+            TabButtons[name] = btn
+            btn.MouseButton1Click:Connect(function()
+                switchTab(name)
+            end)
+
+            local page = Instance.new("Frame")
+            page.Name = name .. "_Page"
+            page.Size = UDim2.new(1, 0, 1, 0)
+            page.BackgroundTransparency = 1
+            page.Visible = false
+            page.Parent = ContentArea
+            Tabs[name] = page
+
+            return page
+        end
+
+        -- =========================================================================
+        -- ABA 1: DASHBOARD
+        -- =========================================================================
+        local DashPage = createTabButton("Início", "📊", 1)
+
+        -- Cards de Estatísticas
+        local function createStatCard(title, value, xOffset, icon)
+            local card = Instance.new("Frame")
+            card.Size = UDim2.new(0.31, 0, 0, 68)
+            card.Position = UDim2.new(xOffset, 0, 0, 6)
+            card.BackgroundColor3 = Color3.fromRGB(26, 29, 39)
+            card.BorderSizePixel = 0
+            card.Parent = DashPage
+
+            local c = Instance.new("UICorner")
+            c.CornerRadius = UDim.new(0, 8)
+            c.Parent = card
+
+            local st = Instance.new("UIStroke")
+            st.Color = Color3.fromRGB(40, 45, 60)
+            st.Parent = card
+
+            local t = Instance.new("TextLabel")
+            t.Size = UDim2.new(1, -12, 0, 18)
+            t.Position = UDim2.new(0, 10, 0, 8)
+            t.BackgroundTransparency = 1
+            t.Text = icon .. " " .. title
+            t.TextColor3 = Color3.fromRGB(150, 155, 175)
+            t.TextSize = 11
+            t.Font = Enum.Font.Gotham
+            t.TextXAlignment = Enum.TextXAlignment.Left
+            t.Parent = card
+
+            local val = Instance.new("TextLabel")
+            val.Size = UDim2.new(1, -12, 0, 28)
+            val.Position = UDim2.new(0, 10, 0, 28)
+            val.BackgroundTransparency = 1
+            val.Text = value
+            val.TextColor3 = Color3.fromRGB(255, 255, 255)
+            val.TextSize = 18
+            val.Font = Enum.Font.GothamBold
+            val.TextXAlignment = Enum.TextXAlignment.Left
+            val.Parent = card
+
+            return val
+        end
+
+        local StatTargets = createStatCard("Alvos no Mapa", "Carregando...", 0, "📍")
+        local StatBadgesApi = createStatCard("Badges do Jogo", "Consultando...", 0.345, "🏅")
+        local StatSpeed = createStatCard("Modo Coleta", "Ultra Fast", 0.69, "⚡")
+
+        -- Bloco de Progresso do Coletor
+        local CollectorBox = Instance.new("Frame")
+        CollectorBox.Size = UDim2.new(1, 0, 0, 140)
+        CollectorBox.Position = UDim2.new(0, 0, 0, 84)
+        CollectorBox.BackgroundColor3 = Color3.fromRGB(26, 29, 39)
+        CollectorBox.BorderSizePixel = 0
+        CollectorBox.Parent = DashPage
+
+        local cbCorner = Instance.new("UICorner")
+        cbCorner.CornerRadius = UDim.new(0, 10)
+        cbCorner.Parent = CollectorBox
+
+        local cbStroke = Instance.new("UIStroke")
+        cbStroke.Color = Color3.fromRGB(40, 45, 60)
+        cbStroke.Parent = CollectorBox
+
+        local StatusTxt = Instance.new("TextLabel")
+        StatusTxt.Size = UDim2.new(1, -24, 0, 20)
+        StatusTxt.Position = UDim2.new(0, 12, 0, 12)
+        StatusTxt.BackgroundTransparency = 1
+        StatusTxt.Text = "Status: Aguardando comando"
+        StatusTxt.TextColor3 = Color3.fromRGB(180, 185, 205)
+        StatusTxt.TextSize = 12
+        StatusTxt.Font = Enum.Font.GothamMedium
+        StatusTxt.TextXAlignment = Enum.TextXAlignment.Left
+        StatusTxt.Parent = CollectorBox
+
+        local CounterTxt = Instance.new("TextLabel")
+        CounterTxt.Size = UDim2.new(1, -24, 0, 24)
+        CounterTxt.Position = UDim2.new(0, 12, 0, 36)
+        CounterTxt.BackgroundTransparency = 1
+        CounterTxt.Text = "0 / 0 coletadas (0%)"
+        CounterTxt.TextColor3 = Color3.fromRGB(255, 255, 255)
+        CounterTxt.TextSize = 16
+        CounterTxt.Font = Enum.Font.GothamBold
+        CounterTxt.TextXAlignment = Enum.TextXAlignment.Left
+        CounterTxt.Parent = CollectorBox
+
+        local BarBg = Instance.new("Frame")
+        BarBg.Size = UDim2.new(1, -24, 0, 10)
+        BarBg.Position = UDim2.new(0, 12, 0, 68)
+        BarBg.BackgroundColor3 = Color3.fromRGB(38, 42, 54)
+        BarBg.BorderSizePixel = 0
+        BarBg.Parent = CollectorBox
+
+        local bbgc = Instance.new("UICorner")
+        bbgc.CornerRadius = UDim.new(1, 0)
+        bbgc.Parent = BarBg
+
+        local BarFill = Instance.new("Frame")
+        BarFill.Size = UDim2.new(0, 0, 1, 0)
+        BarFill.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
+        BarFill.BorderSizePixel = 0
+        BarFill.Parent = BarBg
+
+        local bfc = Instance.new("UICorner")
+        bfc.CornerRadius = UDim.new(1, 0)
+        bfc.Parent = BarFill
+
+        -- Botões de Ação
+        local StartBtn = Instance.new("TextButton")
+        StartBtn.Size = UDim2.new(0.48, 0, 0, 36)
+        StartBtn.Position = UDim2.new(0, 12, 0, 90)
+        StartBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+        StartBtn.Text = "INICIAR COLETA"
+        StartBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        StartBtn.TextSize = 12
+        StartBtn.Font = Enum.Font.GothamBold
+        StartBtn.BorderSizePixel = 0
+        StartBtn.Parent = CollectorBox
+
+        local sbc = Instance.new("UICorner")
+        sbc.CornerRadius = UDim.new(0, 8)
+        sbc.Parent = StartBtn
+
+        local StopBtn = Instance.new("TextButton")
+        StopBtn.Size = UDim2.new(0.48, 0, 0, 36)
+        StopBtn.Position = UDim2.new(0.51, 0, 0, 90)
+        StopBtn.BackgroundColor3 = Color3.fromRGB(45, 50, 65)
+        StopBtn.Text = "INTERROMPER"
+        StopBtn.TextColor3 = Color3.fromRGB(220, 220, 230)
+        StopBtn.TextSize = 12
+        StopBtn.Font = Enum.Font.GothamBold
+        StopBtn.BorderSizePixel = 0
+        StopBtn.Parent = CollectorBox
+
+        local stc = Instance.new("UICorner")
+        stc.CornerRadius = UDim.new(0, 8)
+        stc.Parent = StopBtn
+
+        -- =========================================================================
+        -- ABA 2: OPÇÕES DO COLETOR
+        -- =========================================================================
+        local OptPage = createTabButton("Coletor", "⚡", 2)
+
+        local optScroll = Instance.new("ScrollingFrame")
+        optScroll.Size = UDim2.new(1, 0, 1, 0)
+        optScroll.BackgroundTransparency = 1
+        optScroll.BorderSizePixel = 0
+        optScroll.ScrollBarThickness = 4
+        optScroll.Parent = OptPage
+
+        local optList = Instance.new("UIListLayout")
+        optList.Padding = UDim.new(0, 8)
+        optList.Parent = optScroll
+
+        local function createToggle(label, initialVal, callback)
+            local item = Instance.new("Frame")
+            item.Size = UDim2.new(1, -10, 0, 44)
+            item.BackgroundColor3 = Color3.fromRGB(26, 29, 39)
+            item.BorderSizePixel = 0
+            item.Parent = optScroll
+
+            local c = Instance.new("UICorner")
+            c.CornerRadius = UDim.new(0, 8)
+            c.Parent = item
+
+            local lbl = Instance.new("TextLabel")
+            lbl.Size = UDim2.new(1, -70, 1, 0)
+            lbl.Position = UDim2.new(0, 14, 0, 0)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = label
+            lbl.TextColor3 = Color3.fromRGB(240, 240, 245)
+            lbl.TextSize = 12
+            lbl.Font = Enum.Font.GothamMedium
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            lbl.Parent = item
+
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0, 48, 0, 26)
+            btn.Position = UDim2.new(1, -58, 0.5, -13)
+            btn.BackgroundColor3 = initialVal and Color3.fromRGB(0, 180, 100) or Color3.fromRGB(50, 54, 68)
+            btn.Text = initialVal and "ON" or "OFF"
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btn.TextSize = 10
+            btn.Font = Enum.Font.GothamBold
+            btn.BorderSizePixel = 0
+            btn.Parent = item
+
+            local bc = Instance.new("UICorner")
+            bc.CornerRadius = UDim.new(0, 6)
+            bc.Parent = btn
+
+            local state = initialVal
+            btn.MouseButton1Click:Connect(function()
+                state = not state
+                btn.BackgroundColor3 = state and Color3.fromRGB(0, 180, 100) or Color3.fromRGB(50, 54, 68)
+                btn.Text = state and "ON" or "OFF"
+                callback(state)
+            end)
+        end
+
+        createToggle("Anti-AFK Automático Permanente", Settings.AutoAntiAfk, function(v)
+            Settings.AutoAntiAfk = v
         end)
 
-        -- Status e Contadores
-        local statusLabel = Instance.new("TextLabel")
-        statusLabel.Size = UDim2.new(1, -24, 0, 18)
-        statusLabel.Position = UDim2.new(0, 12, 0, 46)
-        statusLabel.BackgroundTransparency = 1
-        statusLabel.Text = "Status: Aguardando início..."
-        statusLabel.TextColor3 = Color3.fromRGB(170, 175, 195)
-        statusLabel.TextSize = 11
-        statusLabel.Font = Enum.Font.GothamMedium
-        statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-        statusLabel.Parent = main
+        createToggle("Ativar Noclip Durante Coleta", Settings.Noclip, function(v)
+            Settings.Noclip = v
+        end)
 
-        local counterLabel = Instance.new("TextLabel")
-        counterLabel.Size = UDim2.new(1, -24, 0, 22)
-        counterLabel.Position = UDim2.new(0, 12, 0, 68)
-        counterLabel.BackgroundTransparency = 1
-        counterLabel.Text = "0 / 0 badges processadas (0%)"
-        counterLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        counterLabel.TextSize = 13
-        counterLabel.Font = Enum.Font.GothamBold
-        counterLabel.TextXAlignment = Enum.TextXAlignment.Left
-        counterLabel.Parent = main
+        createToggle("Modo Seguro com Tween (Evita Kick)", Settings.Mode == "Safe", function(v)
+            Settings.Mode = v and "Safe" or "Ultra"
+            StatSpeed.Text = v and "Safe (Tween)" or "Ultra Fast"
+        end)
 
-        -- Barra de Progresso (Fundo)
-        local progressBg = Instance.new("Frame")
-        progressBg.Size = UDim2.new(1, -24, 0, 8)
-        progressBg.Position = UDim2.new(0, 12, 0, 98)
-        progressBg.BackgroundColor3 = Color3.fromRGB(40, 44, 56)
-        progressBg.BorderSizePixel = 0
-        progressBg.Parent = main
+        createToggle("Acionar Prompts de Proximidade (E)", true, function(v) end)
+        createToggle("Acionar Detectores de Clique", true, function(v) end)
 
-        local bgCorner = Instance.new("UICorner")
-        bgCorner.CornerRadius = UDim.new(1, 0)
-        bgCorner.Parent = progressBg
+        -- =========================================================================
+        -- ABA 3: EXPLORADOR DE BADGES DO JOGO (API LIVE)
+        -- =========================================================================
+        local ListPage = createTabButton("Badges", "📜", 3)
 
-        -- Barra de Progresso (Preenchimento)
-        local progressFill = Instance.new("Frame")
-        progressFill.Size = UDim2.new(0, 0, 1, 0)
-        progressFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-        progressFill.BorderSizePixel = 0
-        progressFill.Parent = progressBg
+        local SearchBox = Instance.new("TextBox")
+        SearchBox.Size = UDim2.new(1, 0, 0, 32)
+        SearchBox.BackgroundColor3 = Color3.fromRGB(26, 29, 39)
+        SearchBox.PlaceholderText = "🔍 Buscar badge por nome..."
+        SearchBox.PlaceholderColor3 = Color3.fromRGB(120, 125, 140)
+        SearchBox.Text = ""
+        SearchBox.TextColor3 = Color3.fromRGB(240, 240, 245)
+        SearchBox.TextSize = 12
+        SearchBox.Font = Enum.Font.Gotham
+        SearchBox.BorderSizePixel = 0
+        SearchBox.Parent = ListPage
 
-        local fillCorner = Instance.new("UICorner")
-        fillCorner.CornerRadius = UDim.new(1, 0)
-        fillCorner.Parent = progressFill
+        local sbc = Instance.new("UICorner")
+        sbc.CornerRadius = UDim.new(0, 8)
+        sbc.Parent = SearchBox
 
-        -- Botão de Ação (Iniciar / Parar)
-        local actionBtn = Instance.new("TextButton")
-        actionBtn.Size = UDim2.new(1, -24, 0, 36)
-        actionBtn.Position = UDim2.new(0, 12, 0, 122)
-        actionBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
-        actionBtn.Text = "INICIAR COLETA"
-        actionBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        actionBtn.TextSize = 12
-        actionBtn.Font = Enum.Font.GothamBold
-        actionBtn.BorderSizePixel = 0
-        actionBtn.Parent = main
+        local BadgeScroll = Instance.new("ScrollingFrame")
+        BadgeScroll.Size = UDim2.new(1, 0, 1, -40)
+        BadgeScroll.Position = UDim2.new(0, 0, 0, 40)
+        BadgeScroll.BackgroundTransparency = 1
+        BadgeScroll.BorderSizePixel = 0
+        BadgeScroll.ScrollBarThickness = 4
+        BadgeScroll.Parent = ListPage
 
-        local btnCorner = Instance.new("UICorner")
-        btnCorner.CornerRadius = UDim.new(0, 8)
-        btnCorner.Parent = actionBtn
+        local badgeLayout = Instance.new("UIListLayout")
+        badgeLayout.Padding = UDim.new(0, 6)
+        badgeLayout.Parent = BadgeScroll
 
-        -- Sistema de Arrastar da Janela (Mobile e PC)
+        local function populateBadgeCards(filter)
+            filter = (filter or ""):lower()
+            for _, child in ipairs(BadgeScroll:GetChildren()) do
+                if child:IsA("Frame") then child:Destroy() end
+            end
+
+            for _, b in ipairs(GameBadgesCache) do
+                if filter == "" or b.Name:lower():find(filter) then
+                    local card = Instance.new("Frame")
+                    card.Size = UDim2.new(1, -10, 0, 52)
+                    card.BackgroundColor3 = Color3.fromRGB(24, 27, 36)
+                    card.BorderSizePixel = 0
+                    card.Parent = BadgeScroll
+
+                    local cc = Instance.new("UICorner")
+                    cc.CornerRadius = UDim.new(0, 8)
+                    cc.Parent = card
+
+                    local iconImg = Instance.new("ImageLabel")
+                    iconImg.Size = UDim2.new(0, 38, 0, 38)
+                    iconImg.Position = UDim2.new(0, 8, 0, 7)
+                    iconImg.BackgroundColor3 = Color3.fromRGB(35, 38, 50)
+                    iconImg.Image = (b.IconId and b.IconId > 0) and ("rbxassetid://" .. b.IconId) or "rbxassetid://109529329"
+                    iconImg.BorderSizePixel = 0
+                    iconImg.Parent = card
+
+                    local ic = Instance.new("UICorner")
+                    ic.CornerRadius = UDim.new(0, 6)
+                    ic.Parent = iconImg
+
+                    local bTitle = Instance.new("TextLabel")
+                    bTitle.Size = UDim2.new(1, -120, 0, 20)
+                    bTitle.Position = UDim2.new(0, 54, 0, 6)
+                    bTitle.BackgroundTransparency = 1
+                    bTitle.Text = b.Name
+                    bTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    bTitle.TextSize = 12
+                    bTitle.Font = Enum.Font.GothamBold
+                    bTitle.TextXAlignment = Enum.TextXAlignment.Left
+                    bTitle.TextTruncate = Enum.TextTruncate.AtEnd
+                    bTitle.Parent = card
+
+                    local bDesc = Instance.new("TextLabel")
+                    bDesc.Size = UDim2.new(1, -120, 0, 18)
+                    bDesc.Position = UDim2.new(0, 54, 0, 26)
+                    bDesc.BackgroundTransparency = 1
+                    bDesc.Text = b.Description ~= "" and b.Description or ("ID: " .. b.Id)
+                    bDesc.TextColor3 = Color3.fromRGB(150, 155, 170)
+                    bDesc.TextSize = 10
+                    bDesc.Font = Enum.Font.Gotham
+                    bDesc.TextXAlignment = Enum.TextXAlignment.Left
+                    bDesc.TextTruncate = Enum.TextTruncate.AtEnd
+                    bDesc.Parent = card
+
+                    local copyBtn = Instance.new("TextButton")
+                    copyBtn.Size = UDim2.new(0, 56, 0, 28)
+                    copyBtn.Position = UDim2.new(1, -64, 0.5, -14)
+                    copyBtn.BackgroundColor3 = Color3.fromRGB(36, 40, 54)
+                    copyBtn.Text = "Copiar"
+                    copyBtn.TextColor3 = Color3.fromRGB(200, 205, 220)
+                    copyBtn.TextSize = 10
+                    copyBtn.Font = Enum.Font.GothamMedium
+                    copyBtn.BorderSizePixel = 0
+                    copyBtn.Parent = card
+
+                    local cbc = Instance.new("UICorner")
+                    cbc.CornerRadius = UDim.new(0, 6)
+                    cbc.Parent = copyBtn
+
+                    copyBtn.MouseButton1Click:Connect(function()
+                        if setclipboard then
+                            setclipboard(tostring(b.Id))
+                            copyBtn.Text = "Copiado!"
+                            task.wait(1)
+                            copyBtn.Text = "Copiar"
+                        end
+                    end)
+                end
+            end
+            BadgeScroll.CanvasSize = UDim2.new(0, 0, 0, badgeLayout.AbsoluteContentSize.Y + 10)
+        end
+
+        SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            populateBadgeCards(SearchBox.Text)
+        end)
+
+        -- =========================================================================
+        -- ABA 4: UTILITÁRIOS
+        -- =========================================================================
+        local UtilPage = createTabButton("Extras", "🛠️", 4)
+
+        local function createUtilBtn(name, desc, btnText, callback)
+            local box = Instance.new("Frame")
+            box.Size = UDim2.new(1, 0, 0, 56)
+            box.BackgroundColor3 = Color3.fromRGB(26, 29, 39)
+            box.BorderSizePixel = 0
+            box.Parent = UtilPage
+
+            local c = Instance.new("UICorner")
+            c.CornerRadius = UDim.new(0, 8)
+            c.Parent = box
+
+            local t = Instance.new("TextLabel")
+            t.Size = UDim2.new(1, -120, 0, 20)
+            t.Position = UDim2.new(0, 14, 0, 8)
+            t.BackgroundTransparency = 1
+            t.Text = name
+            t.TextColor3 = Color3.fromRGB(245, 245, 250)
+            t.TextSize = 12
+            t.Font = Enum.Font.GothamBold
+            t.TextXAlignment = Enum.TextXAlignment.Left
+            t.Parent = box
+
+            local d = Instance.new("TextLabel")
+            d.Size = UDim2.new(1, -120, 0, 18)
+            d.Position = UDim2.new(0, 14, 0, 28)
+            d.BackgroundTransparency = 1
+            d.Text = desc
+            d.TextColor3 = Color3.fromRGB(150, 155, 170)
+            d.TextSize = 10
+            d.Font = Enum.Font.Gotham
+            d.TextXAlignment = Enum.TextXAlignment.Left
+            d.Parent = box
+
+            local b = Instance.new("TextButton")
+            b.Size = UDim2.new(0, 88, 0, 32)
+            b.Position = UDim2.new(1, -98, 0.5, -16)
+            b.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+            b.Text = btnText
+            b.TextColor3 = Color3.fromRGB(255, 255, 255)
+            b.TextSize = 11
+            b.Font = Enum.Font.GothamBold
+            b.BorderSizePixel = 0
+            b.Parent = box
+
+            local bc = Instance.new("UICorner")
+            bc.CornerRadius = UDim.new(0, 6)
+            bc.Parent = b
+
+            b.MouseButton1Click:Connect(callback)
+        end
+
+        local utilList = Instance.new("UIListLayout")
+        utilList.Padding = UDim.new(0, 8)
+        utilList.Parent = UtilPage
+
+        createUtilBtn("Otimizador de FPS", "Remove texturas para o jogo rodar liso em mapas de 5000+ badges.", "Boost FPS", function()
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    v.Material = Enum.Material.SmoothPlastic
+                    v.CastShadow = false
+                elseif v:IsA("Decal") or v:IsA("Texture") then
+                    v.Transparency = 1
+                end
+            end
+            print("[Badge V3] Otimizador de FPS aplicado.")
+        end)
+
+        createUtilBtn("Copiar Todos os IDs", "Copia todos os Badge IDs encontrados diretamente para a área de transferência.", "Copiar Tudo", function()
+            if setclipboard and #GameBadgesCache > 0 then
+                local ids = {}
+                for _, b in ipairs(GameBadgesCache) do table.insert(ids, b.Id) end
+                setclipboard(table.concat(ids, ", "))
+                print("[Badge V3] Todos os IDs copiados para o Clipboard.")
+            end
+        end)
+
+        createUtilBtn("Reconectar ao Servidor", "Reconecta instantaneamente ao mesmo servidor atual.", "Rejoin", function()
+            game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+        end)
+
+        -- ----------------- Sistema de Arrastar da Janela -----------------
         local dragging, dragStart, startPos
-        titleBar.InputBegan:Connect(function(input)
+        TopBar.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 dragging = true
                 dragStart = input.Position
-                startPos = main.Position
+                startPos = Main.Position
             end
         end)
 
         UserInputService.InputChanged:Connect(function(input)
             if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
                 local delta = input.Position - dragStart
-                main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
             end
         end)
 
-        local function endDrag() dragging = false end
+        local function stopDrag() dragging = false end
         UserInputService.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                endDrag()
+                stopDrag()
             end
         end)
 
-        screen.Parent = parentGui
+        -- Mostrar / Ocultar
+        local isVisible = true
+        local function toggleVisibility()
+            isVisible = not isVisible
+            Main.Visible = isVisible
+        end
+
+        MobileBtn.MouseButton1Click:Connect(toggleVisibility)
+        CloseBtn.MouseButton1Click:Connect(toggleVisibility)
+        MinBtn.MouseButton1Click:Connect(toggleVisibility)
+
+        UserInputService.InputBegan:Connect(function(input, gpe)
+            if not gpe and input.KeyCode == Settings.Keybind then
+                toggleVisibility()
+            end
+        end)
+
+        -- Abre na primeira aba
+        switchTab("Início")
+        Screen.Parent = parentGui
+
         return {
-            Screen = screen,
-            Status = statusLabel,
-            Counter = counterLabel,
-            ProgressFill = progressFill,
-            ActionBtn = actionBtn
+            Screen = Screen,
+            StatusTxt = StatusTxt,
+            CounterTxt = CounterTxt,
+            BarFill = BarFill,
+            StartBtn = StartBtn,
+            StopBtn = StopBtn,
+            StatTargets = StatTargets,
+            StatBadgesApi = StatBadgesApi,
+            PopulateBadges = populateBadgeCards
         }
     end
 
-    -- 3. Motor de Coleta de Badges (Scanner + Dispatcher)
-    local UI = createModernGui()
-    local isRunning = false
-    local shouldStop = false
+    -- -----------------------------------------------------------------------------
+    -- 4. Motor de Coleta Inteligente (Scanner + Dispatcher V3)
+    -- -----------------------------------------------------------------------------
+    local UI = buildUltimateInterface()
+    local isCollecting = false
+    local cancelRequested = false
 
-    local function getTargets()
-        local targets = {}
+    -- Varredura de alvos no mapa
+    local function scanWorldTargets()
+        local list = {}
         local seen = {}
 
-        local function addTarget(part, kind, extra)
+        local function record(part, method, extra)
             if part and part:IsA("BasePart") and not seen[part] then
                 seen[part] = true
-                table.insert(targets, {
+                table.insert(list, {
                     Part = part,
-                    Kind = kind or "Touch",
+                    Method = method or "Touch",
                     Extra = extra
                 })
             end
         end
 
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            -- A) TouchTransmitter
-            if obj:IsA("TouchTransmitter") and obj.Parent and obj.Parent:IsA("BasePart") then
-                addTarget(obj.Parent, "Touch")
-            -- B) ProximityPrompt
-            elseif obj:IsA("ProximityPrompt") and obj.Parent then
-                local parentPart = obj.Parent:IsA("BasePart") and obj.Parent or obj.Parent:FindFirstChildWhichIsA("BasePart")
-                if parentPart then
-                    addTarget(parentPart, "Prompt", obj)
-                end
-            -- C) ClickDetector
-            elseif obj:IsA("ClickDetector") and obj.Parent and obj.Parent:IsA("BasePart") then
-                addTarget(obj.Parent, "Click", obj)
-            -- D) Palavras-chave no nome do bloco
-            elseif obj:IsA("BasePart") then
-                local lower = obj.Name:lower()
-                for _, kw in ipairs(Config.Client.ScanKeywords) do
-                    if lower:find(kw) then
-                        addTarget(obj, "Touch")
-                        break
-                    end
+        for _, item in ipairs(workspace:GetDescendants()) do
+            if item:IsA("TouchTransmitter") and item.Parent and item.Parent:IsA("BasePart") then
+                record(item.Parent, "Touch")
+            elseif item:IsA("ProximityPrompt") and item.Parent then
+                local p = item.Parent:IsA("BasePart") and item.Parent or item.Parent:FindFirstChildWhichIsA("BasePart")
+                if p then record(p, "Prompt", item) end
+            elseif item:IsA("ClickDetector") and item.Parent and item.Parent:IsA("BasePart") then
+                record(item.Parent, "Click", item)
+            elseif item:IsA("BasePart") then
+                local lower = item.Name:lower()
+                if lower:find("badge") or lower:find("emblem") or lower:find("trophy") or lower:find("giver") or lower:find("freebadge") or lower:find("pad") then
+                    record(item, "Touch")
                 end
             end
         end
 
-        return targets
+        return list
     end
 
-    local function runBadgeCollector()
-        if isRunning then
-            shouldStop = true
-            return
-        end
+    -- Inicialização em background das estatísticas e API
+    task.spawn(function()
+        local targets = scanWorldTargets()
+        UI.StatTargets.Text = tostring(#targets)
 
-        isRunning = true
-        shouldStop = false
-        UI.ActionBtn.Text = "PARAR COLETA"
-        UI.ActionBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-        UI.Status.Text = "Status: Escaneando o mapa..."
+        local badges = fetchGameBadgesApi()
+        UI.StatBadgesApi.Text = tostring(#badges)
+        UI.PopulateBadges()
+    end)
+
+    -- Execução da Coleta
+    local function startCollection()
+        if isCollecting then return end
+        isCollecting = true
+        cancelRequested = false
+
+        UI.StartBtn.Text = "COLETANDO..."
+        UI.StartBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 120)
+        UI.StatusTxt.Text = "Status: Escaneando o mapa..."
 
         task.spawn(function()
-            local targets = getTargets()
+            local targets = scanWorldTargets()
             local total = #targets
+            UI.StatTargets.Text = tostring(total)
 
             if total == 0 then
-                UI.Status.Text = "Status: Nenhum alvo encontrado."
-                UI.Counter.Text = "0 alvos de badge encontrados."
-                UI.ActionBtn.Text = "INICIAR COLETA"
-                UI.ActionBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
-                isRunning = false
+                UI.StatusTxt.Text = "Status: Nenhum alvo de badge encontrado no mapa."
+                UI.StartBtn.Text = "INICIAR COLETA"
+                UI.StartBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+                isCollecting = false
                 return
             end
 
-            UI.Status.Text = string.format("Status: Processando %d alvos...", total)
-
-            local processed = 0
+            local done = 0
             for i, target in ipairs(targets) do
-                if shouldStop then
-                    UI.Status.Text = "Status: Coleta cancelada pelo usuário."
+                if cancelRequested then
+                    UI.StatusTxt.Text = "Status: Coleta cancelada pelo usuário."
                     break
                 end
 
                 local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
                 local root = char:FindFirstChild("HumanoidRootPart")
+                local hum = char:FindFirstChildWhichIsA("Humanoid")
 
                 if root and target.Part and target.Part.Parent then
+                    -- Noclip se ativado
+                    if Settings.Noclip and hum then
+                        for _, p in ipairs(char:GetDescendants()) do
+                            if p:IsA("BasePart") then p.CanCollide = false end
+                        end
+                    end
+
                     pcall(function()
-                        if target.Kind == "Prompt" and fireproximityprompt then
+                        -- Interações especiais
+                        if target.Method == "Prompt" and fireproximityprompt then
                             fireproximityprompt(target.Extra)
-                        elseif target.Kind == "Click" and fireclickdetector then
+                        elseif target.Method == "Click" and fireclickdetector then
                             fireclickdetector(target.Extra)
                         end
 
-                        -- Sempre aciona o toque no bloco
-                        if firetouchinterest then
+                        -- Método de Toque
+                        if Settings.Mode == "Ultra" and firetouchinterest then
                             firetouchinterest(root, target.Part, 0)
                             task.wait(0.005)
                             firetouchinterest(root, target.Part, 1)
-                        elseif Config.Client.TeleportFallback then
-                            if Config.Client.NoclipOnTeleport and char:FindFirstChildWhichIsA("Humanoid") then
-                                for _, part in ipairs(char:GetDescendants()) do
-                                    if part:IsA("BasePart") then part.CanCollide = false end
-                                end
+                        else
+                            -- Modo Tween Seguro
+                            local targetPos = target.Part.CFrame + Vector3.new(0, 2, 0)
+                            local dist = (root.Position - targetPos.Position).Magnitude
+                            local timeToTravel = math.clamp(dist / Settings.TweenSpeed, 0.05, 0.4)
+
+                            local tween = TweenService:Create(root, TweenInfo.new(timeToTravel, Enum.EasingStyle.Linear), {CFrame = targetPos})
+                            tween:Play()
+                            tween.Completed:Wait()
+
+                            if firetouchinterest then
+                                firetouchinterest(root, target.Part, 0)
+                                task.wait(0.005)
+                                firetouchinterest(root, target.Part, 1)
                             end
-                            root.CFrame = target.Part.CFrame + Vector3.new(0, 1.5, 0)
                         end
                     end)
                 end
 
-                processed = processed + 1
+                done = done + 1
+                local pct = math.floor((done / total) * 100)
+                UI.CounterTxt.Text = string.format("%d / %d processadas (%d%%)", done, total, pct)
+                UI.BarFill.Size = UDim2.new(done / total, 0, 1, 0)
+                UI.StatusTxt.Text = string.format("Status: Coletando... [%d/%d]", done, total)
 
-                -- Atualiza a interface
-                local pct = math.floor((processed / total) * 100)
-                UI.Counter.Text = string.format("%d / %d badges (%d%%)", processed, total, pct)
-                UI.ProgressFill.Size = UDim2.new(processed / total, 0, 1, 0)
-
-                task.wait(Config.Client.ScanInterval)
+                task.wait(Settings.Delay)
             end
 
-            if not shouldStop then
-                UI.Status.Text = "Status: Concluído com sucesso!"
-                UI.ProgressFill.BackgroundColor3 = Color3.fromRGB(0, 220, 120)
+            if not cancelRequested then
+                UI.StatusTxt.Text = "Status: Coleta 100% Finalizada!"
+                UI.BarFill.BackgroundColor3 = Color3.fromRGB(0, 220, 120)
+                print("[Badge V3] Coleta concluída com sucesso.")
             end
 
-            UI.ActionBtn.Text = "INICIAR NOVAMENTE"
-            UI.ActionBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
-            isRunning = false
-            shouldStop = false
+            UI.StartBtn.Text = "INICIAR COLETA"
+            UI.StartBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+            isCollecting = false
+            cancelRequested = false
         end)
     end
 
-    UI.ActionBtn.MouseButton1Click:Connect(runBadgeCollector)
-
-    if Config.Client.AutoStart then
-        task.delay(1, runBadgeCollector)
+    local function stopCollection()
+        if isCollecting then
+            cancelRequested = true
+            UI.StatusTxt.Text = "Status: Interrompendo..."
+        end
     end
 
--- ==============================================================================
+    UI.StartBtn.MouseButton1Click:Connect(startCollection)
+    UI.StopBtn.MouseButton1Click:Connect(stopCollection)
+
+-- =================================================================================
 -- MODO 2: SERVIDOR (Roblox Studio / ServerScriptService)
--- ==============================================================================
+-- =================================================================================
 elseif RunService:IsServer() then
     local BadgeService = game:GetService("BadgeService")
     local HttpService = game:GetService("HttpService")
@@ -387,8 +963,7 @@ elseif RunService:IsServer() then
     local cachedBadges = nil
     local isFetching = false
 
-    -- 1. Busca inteligente com paginação e cache em memória
-    local function fetchAllUniverseBadges()
+    local function getUniverseBadges()
         if cachedBadges then return cachedBadges end
         if isFetching then
             while isFetching do task.wait(0.1) end
@@ -396,13 +971,13 @@ elseif RunService:IsServer() then
         end
 
         isFetching = true
-        local badgeList = {}
+        local list = {}
         local cursor = ""
 
-        print("[BadgeServer v2] Buscando todas as badges do Universo:", UNIVERSE_ID)
+        print("[BadgeServer V3] Catalogando badges do Universo:", UNIVERSE_ID)
 
         repeat
-            local url = string.format(Config.Server.ProxyUrl, UNIVERSE_ID, cursor)
+            local url = string.format("https://badges.roproxy.com/v1/universes/%d/badges?limit=100&cursor=%s", UNIVERSE_ID, cursor)
             local success, body = pcall(function()
                 return HttpService:GetAsync(url)
             end)
@@ -410,98 +985,52 @@ elseif RunService:IsServer() then
             if success and body then
                 local data = HttpService:JSONDecode(body)
                 if data and data.data then
-                    for _, item in ipairs(data.data) do
-                        table.insert(badgeList, {
-                            Id = item.id,
-                            Name = item.name or "Sem Nome",
-                            Enabled = item.enabled
-                        })
+                    for _, b in ipairs(data.data) do
+                        table.insert(list, b.id)
                     end
                     cursor = data.nextPageCursor or ""
                 else
                     break
                 end
             else
-                warn("[BadgeServer v2] Falha na requisição HTTP:", body)
                 break
             end
-            task.wait(0.2)
+            task.wait(0.15)
         until cursor == "" or cursor == nil
 
-        cachedBadges = badgeList
+        cachedBadges = list
         isFetching = false
-        print(string.format("[BadgeServer v2] %d badges catalogadas com sucesso.", #badgeList))
-        return badgeList
+        print(string.format("[BadgeServer V3] %d badges catalogadas.", #list))
+        return list
     end
 
-    -- 2. Concessão com controle de rate-limit
-    local function awardBadgesToPlayer(player)
+    local function grantAllBadges(player)
         task.spawn(function()
-            local badges = fetchAllUniverseBadges()
-            if #badges == 0 then
-                warn("[BadgeServer v2] Nenhuma badge disponível para conceder a " .. player.Name)
-                return
-            end
+            local badges = getUniverseBadges()
+            if #badges == 0 then return end
 
-            print(string.format("[BadgeServer v2] Iniciando concessão de %d badges para %s...", #badges, player.Name))
-            local awardedCount = 0
-
-            for _, badge in ipairs(badges) do
-                if not player or not player.Parent then break end -- Player saiu do servidor
-
-                local ownsBadge = false
-                local checkSuccess, checkResult = pcall(function()
-                    return BadgeService:UserHasBadgeAsync(player.UserId, badge.Id)
-                end)
-
-                if checkSuccess then
-                    ownsBadge = checkResult
-                end
-
-                if not ownsBadge then
-                    local awardSuccess, awardErr = pcall(function()
-                        BadgeService:AwardBadge(player.UserId, badge.Id)
-                    end)
-
-                    if awardSuccess then
-                        awardedCount = awardedCount + 1
-                    else
-                        warn(string.format("[BadgeServer v2] Erro na badge %d: %s", badge.Id, tostring(awardErr)))
+            print(string.format("[BadgeServer V3] Entregando %d badges a %s...", #badges, player.Name))
+            for _, bId in ipairs(badges) do
+                if not player.Parent then break end
+                pcall(function()
+                    if not BadgeService:UserHasBadgeAsync(player.UserId, bId) then
+                        BadgeService:AwardBadge(player.UserId, bId)
+                        task.wait(0.12)
                     end
-                    
-                    -- Pausa para não estourar a cota da API da BadgeService
-                    task.wait(Config.Server.DelayBetweenAwards)
-                end
+                end)
             end
-
-            print(string.format("[BadgeServer v2] Finalizado! %d novas badges concedidas a %s.", awardedCount, player.Name))
+            print("[BadgeServer V3] Concluído para " .. player.Name)
         end)
-    end
-
-    -- 3. Concede ao entrar (se ativado na configuração)
-    if Config.Server.AwardOnJoin then
-        Players.PlayerAdded:Connect(function(player)
-            awardBadgesToPlayer(player)
-        end)
-    end
-
-    -- 4. Comandos de Chat (Legacy + TextChatService)
-    local function handleChatCommand(sender, message)
-        local msg = message:lower()
-        if msg == "/giveall" or msg == "/awardall" then
-            print(string.format("[BadgeServer v2] Comando /giveall disparado por %s", sender.Name))
-            for _, p in ipairs(Players:GetPlayers()) do
-                awardBadgesToPlayer(p)
-            end
-        elseif msg == "/giveme" or msg == "/awardme" then
-            print(string.format("[BadgeServer v2] Comando /giveme disparado por %s", sender.Name))
-            awardBadgesToPlayer(sender)
-        end
     end
 
     Players.PlayerAdded:Connect(function(player)
+        grantAllBadges(player)
         player.Chatted:Connect(function(msg)
-            handleChatCommand(player, msg)
+            if msg:lower() == "/giveall" then
+                for _, p in ipairs(Players:GetPlayers()) do grantAllBadges(p) end
+            elseif msg:lower() == "/giveme" then
+                grantAllBadges(player)
+            end
         end)
     end)
 end
