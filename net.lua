@@ -4658,6 +4658,7 @@ trackConn(RunService.Heartbeat:Connect(function(dt)
     end
 
     -- DEFESAS
+function F.hbDefenses(dt, char, realRoot, realHum)
     if config.antiFling then
         F.aplicarNoPlayerCollide()
         if not config.vooAtivo and realRoot.AssemblyLinearVelocity.Magnitude > 250 then
@@ -4683,8 +4684,10 @@ trackConn(RunService.Heartbeat:Connect(function(dt)
 
     state.killbrickTimer = state.killbrickTimer + dt
     if state.killbrickTimer >= 0.35 then state.killbrickTimer = 0 F.escanearKillbricks() end
+end
 
     -- TRIGGERBOT, KILL-AURA, AUTO-PARRY, AUTO-DODGE, ANTI-AIM
+function F.hbCombatAndWorld(dt, char, realRoot)
     if config.triggerbotAtivo then
         state.triggerTimer = state.triggerTimer + dt
         if state.triggerTimer >= (config.triggerDelay or 0.05) then
@@ -4865,6 +4868,9 @@ trackConn(RunService.Heartbeat:Connect(function(dt)
         if state.worldEspTimer >= 0.45 then state.worldEspTimer = 0 F.atualizarWorldEsp() end
     end
 
+end
+
+function F.hbMobility(dt, keys, char, realRoot, realHum)
     -- MACRO RECORDER & PLAYER
     if config.macroGravando then
         state.macroRecordTimer = state.macroRecordTimer + dt
@@ -5085,6 +5091,9 @@ trackConn(RunService.Heartbeat:Connect(function(dt)
         camera.CFrame = state.freeCamCFrame
     end
 
+end
+
+function F.hbHud(dt, realRoot)
     -- ESP THROTTLED, INSPECTOR, OUTLINE, MINI-HUD 8.0
     state.espThrottleTimer = state.espThrottleTimer + dt
     if config.espAtivo and state.espThrottleTimer >= 0.05 then
@@ -5137,6 +5146,43 @@ trackConn(RunService.Heartbeat:Connect(function(dt)
         local ss = "💾 " for i = 0, 9 do ss = ss .. (state.slotsPosicoes[i] and "■" or "□") end
         UI.hudSlots.Text = ss
     end
+end
+
+trackConn(RunService.Heartbeat:Connect(function(dt)
+    if state.unloaded then return end
+    local char = player.Character
+    if not char then return end
+    local realRoot = char:FindFirstChild("HumanoidRootPart")
+    local realHum  = char:FindFirstChildOfClass("Humanoid")
+    if not realRoot or not realHum then return end
+
+    local keys = {
+        W = UserInputService:IsKeyDown(Enum.KeyCode.W),
+        S = UserInputService:IsKeyDown(Enum.KeyCode.S),
+        A = UserInputService:IsKeyDown(Enum.KeyCode.A),
+        D = UserInputService:IsKeyDown(Enum.KeyCode.D),
+        Space = UserInputService:IsKeyDown(Enum.KeyCode.Space),
+        LeftShift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift),
+        LeftControl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl),
+    }
+
+    state.frameCount = state.frameCount + 1
+    state.fpsTimer   = state.fpsTimer + dt
+    if state.fpsTimer >= 1 then
+        state.lastFps = state.frameCount state.frameCount = 0 state.fpsTimer = 0
+        if UI.srvInfoLbl then
+            UI.srvInfoLbl.Text = string.format("  PlaceId: %d  |  Players: %d/%d  |  Tempo: %ds", game.PlaceId, #Players:GetPlayers(), Players.MaxPlayers, math.floor(tick() - state.serverStartTime))
+        end
+    end
+
+    if realHum.FloorMaterial ~= Enum.Material.Air and realHum.Health > 0 and realRoot.Position.Y > -50 then
+        state.lastSafeCFrame = realRoot.CFrame
+    end
+
+    F.hbDefenses(dt, char, realRoot, realHum)
+    F.hbCombatAndWorld(dt, char, realRoot)
+    F.hbMobility(dt, keys, char, realRoot, realHum)
+    F.hbHud(dt, realRoot)
 end))
 
 atualizarRayParams()
